@@ -497,14 +497,20 @@ cooldown_floor：0.3
 注入内容分区：
 
 ```text
-Current Inner State / Persona State
-  ↓
-Core Memory
-  ↓
 Recent Context
-  ↓
 Recalled Memory
+Related Memory
+
+Occasional:
+Current Inner State / Persona State
+Relationship Weather
+
+Disabled by default:
+Core Memory
+Haven Favorite Memory
 ```
+
+工具调用续接轮不会重新做动态记忆召回，也不会刷新召回冷却。
 
 #### Persona State 在网关里的作用【二次开发】
 
@@ -1070,6 +1076,10 @@ All parameters in `config.yaml` (copy from `config.example.yaml`). Key ones:
 | `gateway.upstreams` | 多上游路由配置 / Multi-upstream routing config | `[]` |
 | `gateway.skip_recent_rounds` | 最近几轮跳过注入 / Skip recently injected rounds | `5` |
 | `gateway.cooldown_hours` | 召回冷却时长 / Recall cooldown hours | `48` |
+| `gateway.core_memory_budget` | 核心记忆预算，默认不注入 / Core memory budget, disabled by default | `0` |
+| `gateway.favorite_memory_budget` | favorite 记忆预算，默认不注入 / Favorite memory budget, disabled by default | `0` |
+| `gateway.current_inner_state_interval_rounds` | Persona 状态注入间隔 / Persona state injection interval | `15` |
+| `gateway.relationship_weather_interval_rounds` | 关系天气注入间隔 / Relationship weather injection interval | `15` |
 | `persona.enabled` | 启用人格状态注入 / Enable persona state injection | `true` |
 | `persona.model` | 人格事件评估模型 / Persona event evaluator model | `deepseek-chat` |
 | `persona.session_mood_half_life_minutes` | 短期心情半衰期 / Session mood half-life | `90` |

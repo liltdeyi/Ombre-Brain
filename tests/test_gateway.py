@@ -309,11 +309,10 @@ def test_gateway_accepts_anthropic_messages(monkeypatch, test_config, bucket_mgr
     assert forwarded["stop"] == ["END"]
     assert forwarded["stream"] is False
     assert forwarded["messages"][0] == {"role": "system", "content": "你是一个自然聊天助手。"}
-    assert forwarded["messages"][1]["role"] == "system"
-    assert "Core Memory" in forwarded["messages"][1]["content"]
-    assert forwarded["messages"][2]["role"] == "user"
-    assert "Current Inner State" in forwarded["messages"][2]["content"]
-    assert forwarded["messages"][2]["content"].endswith("今天怎么样？")
+    assert forwarded["messages"][1]["role"] == "user"
+    assert "Current Inner State" in forwarded["messages"][1]["content"]
+    assert "Core Memory" not in forwarded["messages"][1]["content"]
+    assert forwarded["messages"][1]["content"].endswith("今天怎么样？")
     assert state_store.get_recent_bucket_ids("sess-anthropic", 5) == set()
 
 
@@ -1007,9 +1006,9 @@ def test_gateway_skips_persona_reanalysis_on_tool_continuation(monkeypatch, test
         {"session_id": "sess-tool-continuation", "user_message": "查一下今日日记"}
     ]
     roles = [message["role"] for message in captured[0]["messages"]]
-    assert roles == ["system", "system", "user", "assistant", "tool"]
-    assert "Core Memory" in captured[0]["messages"][0]["content"]
-    assert "Current Inner State" in captured[0]["messages"][1]["content"]
+    assert roles == ["user", "assistant", "tool"]
+    assert "Recalled Memory" not in _joined_message_content(captured[0]["messages"])
+    assert state_store.get_current_round("sess-tool-continuation") == 0
 
 
 def test_gateway_restores_reasoning_content_for_tool_continuation(monkeypatch, test_config, bucket_mgr):
@@ -1409,23 +1408,19 @@ def test_gateway_injects_after_existing_system_message(monkeypatch, test_config,
     assert captured[0]["auth"] == "Bearer upstream-secret"
     assert forwarded["model"] == "gateway-default-model"
     assert forwarded["messages"][0]["content"] == "你是一个自然聊天助手。"
-    assert forwarded["messages"][1]["role"] == "system"
-    assert forwarded["messages"][2]["role"] == "user"
-    assert forwarded["messages"][2]["content"].endswith("猫咪最近又干了什么？")
+    assert forwarded["messages"][1]["role"] == "user"
+    assert forwarded["messages"][1]["content"].endswith("猫咪最近又干了什么？")
 
-    stable = forwarded["messages"][1]["content"]
-    dynamic = forwarded["messages"][2]["content"]
-    assert "Core Memory" in stable
-    assert "Recent Context" not in stable
-    assert "Recalled Memory" not in stable
+    dynamic = forwarded["messages"][1]["content"]
+    assert "Core Memory" not in dynamic
     assert "Current Inner State" in dynamic
     assert "Recent Context" in dynamic
     assert "Recalled Memory" in dynamic
-    assert "核心准则" in stable
+    assert "核心准则" not in dynamic
     assert "昨晚电影" in dynamic
     assert "猫咪偷鱼" in dynamic
     assert "新猫粮" in dynamic
-    assert "已解决论文" not in stable + dynamic
+    assert "已解决论文" not in dynamic
     assert state_store.get_recent_bucket_ids("sess-inject", 5) == {cat_a}
 
 
@@ -1479,11 +1474,10 @@ def test_gateway_injects_when_no_system_message(monkeypatch, test_config, bucket
 
     assert response.status_code == 200
     messages = captured[0]["json"]["messages"]
-    assert messages[0]["role"] == "system"
-    assert "Core Memory" in messages[0]["content"]
-    assert messages[1]["role"] == "user"
-    assert "Current Inner State" in messages[1]["content"]
-    assert messages[1]["content"].endswith("今天怎么样")
+    assert messages[0]["role"] == "user"
+    assert "Current Inner State" in messages[0]["content"]
+    assert "Core Memory" not in messages[0]["content"]
+    assert messages[0]["content"].endswith("今天怎么样")
 
 
 def test_recent_round_skip_prefers_unseen_candidate(monkeypatch, test_config, bucket_mgr):

@@ -86,6 +86,16 @@ class GatewayService:
         self.favorite_memory_budget = int(self.gateway_cfg.get("favorite_memory_budget", 180))
         self.favorite_memory_max_cards = max(0, int(self.gateway_cfg.get("favorite_memory_max_cards", 1)))
         self.related_memory_budget = int(self.gateway_cfg.get("related_memory_budget", 220))
+        self.core_memory_interval_rounds = max(0, int(self.gateway_cfg.get("core_memory_interval_rounds", 0)))
+        self.current_inner_state_interval_rounds = max(
+            0, int(self.gateway_cfg.get("current_inner_state_interval_rounds", 15))
+        )
+        self.relationship_weather_interval_rounds = max(
+            0, int(self.gateway_cfg.get("relationship_weather_interval_rounds", 15))
+        )
+        self.favorite_memory_interval_rounds = max(
+            0, int(self.gateway_cfg.get("favorite_memory_interval_rounds", 0))
+        )
 
         self.semantic_weight = float(self.gateway_cfg.get("semantic_weight", 0.45))
         self.keyword_weight = float(self.gateway_cfg.get("keyword_weight", 0.35))
@@ -225,7 +235,7 @@ class GatewayService:
                 session_id,
                 persona_user_message,
                 upstream_response,
-                recalled_ids,
+                recalled_ids or [],
             )
 
         return self._proxy_response(upstream_response)
@@ -287,7 +297,7 @@ class GatewayService:
                 session_id,
                 persona_user_message,
                 upstream_response,
-                recalled_ids,
+                recalled_ids or [],
             )
             return self._openai_response_to_anthropic(upstream_response, forward_payload["model"])
 
@@ -313,7 +323,7 @@ class GatewayService:
             }
         )
 
-    async def prepare_payload(self, payload: dict, session_id: str) -> tuple[dict, list[str]]:
+    async def prepare_payload(self, payload: dict, session_id: str) -> tuple[dict, list[str] | None]:
         messages = payload.get("messages")
         if not isinstance(messages, list) or not messages:
             raise ValueError("messages must be a non-empty list")
@@ -324,20 +334,45 @@ class GatewayService:
         self._get_upstream_for_model(model)
 
         all_buckets = await self.bucket_mgr.list_all(include_archive=False)
-        query = self._extract_last_user_query(messages)
-        persona_query = self._extract_current_turn_user_query(messages)
-        if persona_query:
-            persona_state = await self.persona_engine.build_pre_reply_guidance(session_id, persona_query)
+        current_user_query = self._extract_current_turn_user_query(messages)
+        is_new_user_turn = bool(current_user_query)
+
+        persona_block = ""
+        core_memory = ""
+        recent_context = ""
+        recalled_buckets: list[dict] = []
+        recalled_memory = ""
+        relationship_weather = ""
+        favorite_memory = ""
+        favorite_ids: list[str] = []
+        related_memory = ""
+        injected_ids: list[str] | None = None
+
+        if is_new_user_turn:
+            if self._should_inject_interval(session_id, self.current_inner_state_interval_rounds):
+                persona_state = await self.persona_engine.build_pre_reply_guidance(
+                    session_id, current_user_query
+                )
+                persona_block = self.persona_engine.format_state_block(persona_state)
+            if self._should_inject_interval(session_id, self.core_memory_interval_rounds):
+                core_memory = await self._build_core_memory_block(all_buckets)
+            recent_context = await self._build_recent_context_block(all_buckets)
+            recalled_buckets = await self._select_dynamic_buckets(current_user_query, session_id, all_buckets)
+            recalled_memory = await self._summarize_buckets(recalled_buckets, self.recalled_budget)
+            if self._should_inject_interval(session_id, self.relationship_weather_interval_rounds):
+                relationship_weather = await self._build_relationship_weather_block(all_buckets)
+            if self._should_inject_interval(session_id, self.favorite_memory_interval_rounds):
+                favorite_memory, favorite_ids = await self._build_favorite_memory_block(all_buckets, session_id)
+            related_memory = await self._build_related_memory_block(recalled_buckets, all_buckets)
+            injected_ids = list(
+                dict.fromkeys([bucket["id"] for bucket in recalled_buckets] + favorite_ids)
+            )
         else:
-            persona_state = self.persona_engine.get_current_state(session_id)
-        persona_block = self.persona_engine.format_state_block(persona_state)
-        core_memory = await self._build_core_memory_block(all_buckets)
-        recent_context = await self._build_recent_context_block(all_buckets)
-        recalled_buckets = await self._select_dynamic_buckets(query, session_id, all_buckets)
-        recalled_memory = await self._summarize_buckets(recalled_buckets, self.recalled_budget)
-        relationship_weather = await self._build_relationship_weather_block(all_buckets)
-        favorite_memory, favorite_ids = await self._build_favorite_memory_block(all_buckets, session_id)
-        related_memory = await self._build_related_memory_block(recalled_buckets, all_buckets)
+            logger.info(
+                "Gateway dynamic context skipped | session=%s reason=not_current_user_turn",
+                session_id,
+            )
+
         stable_context, dynamic_context = self._build_injected_context_messages(
             persona_block=persona_block,
             core_memory=core_memory,
@@ -358,9 +393,6 @@ class GatewayService:
         )
         self._apply_prompt_cache_hints(forward_payload, session_id)
         forward_payload["stream"] = payload.get("stream") is True
-        injected_ids = list(
-            dict.fromkeys([bucket["id"] for bucket in recalled_buckets] + favorite_ids)
-        )
         return forward_payload, injected_ids
 
     def _apply_prompt_cache_hints(self, payload: dict[str, Any], session_id: str) -> None:
@@ -451,7 +483,7 @@ class GatewayService:
         self,
         payload: dict,
         session_id: str,
-        recalled_ids: list[str],
+        recalled_ids: list[str] | None,
         user_message: str,
     ) -> Response:
         model = str(payload.get("model") or "").strip()
@@ -512,7 +544,7 @@ class GatewayService:
                         session_id,
                         user_message,
                         self._build_stream_assistant_message(stream_state),
-                        recalled_ids,
+                        recalled_ids or [],
                     )
 
         return StreamingResponse(
@@ -525,7 +557,13 @@ class GatewayService:
             },
         )
 
-    async def _record_successful_round(self, session_id: str, recalled_ids: list[str]) -> None:
+    async def _record_successful_round(self, session_id: str, recalled_ids: list[str] | None) -> None:
+        if recalled_ids is None:
+            logger.info(
+                "Gateway round bookkeeping skipped | session=%s reason=not_current_user_turn",
+                session_id,
+            )
+            return
         round_id = self.state_store.record_success(session_id, recalled_ids)
         for bucket_id in recalled_ids:
             await self.bucket_mgr.touch(bucket_id)
@@ -546,6 +584,10 @@ class GatewayService:
         try:
             body = upstream_response.json()
         except ValueError:
+            logger.info(
+                "Persona post-reply update skipped | session=%s reason=non_json_response",
+                session_id,
+            )
             return
         assistant_message = self._extract_assistant_message_from_response_body(body)
         await self._update_persona_after_assistant_message(
@@ -562,10 +604,24 @@ class GatewayService:
         assistant_message: dict[str, Any] | None,
         recalled_ids: list[str],
     ) -> None:
-        if not user_message.strip() or not isinstance(assistant_message, dict):
+        if not user_message.strip():
+            logger.info(
+                "Persona post-reply update skipped | session=%s reason=missing_user_message",
+                session_id,
+            )
+            return
+        if not isinstance(assistant_message, dict):
+            logger.info(
+                "Persona post-reply update skipped | session=%s reason=missing_assistant_message",
+                session_id,
+            )
             return
         assistant_response = self._coerce_message_text(assistant_message.get("content")).strip()
         if not assistant_response:
+            logger.info(
+                "Persona post-reply update skipped | session=%s reason=empty_assistant_text",
+                session_id,
+            )
             return
         tool_summary = self._summarize_assistant_tool_calls(assistant_message)
         try:
@@ -950,7 +1006,7 @@ class GatewayService:
         self,
         payload: dict,
         session_id: str,
-        recalled_ids: list[str],
+        recalled_ids: list[str] | None,
         user_message: str,
     ) -> Response:
         model = str(payload.get("model") or "").strip()
@@ -1144,7 +1200,7 @@ class GatewayService:
                         session_id,
                         user_message,
                         self._build_stream_assistant_message(stream_state),
-                        recalled_ids,
+                        recalled_ids or [],
                     )
 
         return StreamingResponse(
@@ -1356,6 +1412,14 @@ class GatewayService:
             summary.append(item)
 
         return summary
+
+    def _should_inject_interval(self, session_id: str, interval_rounds: int) -> bool:
+        if interval_rounds <= 0:
+            return False
+        if interval_rounds == 1:
+            return True
+        next_round = self.state_store.get_current_round(session_id) + 1
+        return next_round == 1 or next_round % interval_rounds == 0
 
     async def _build_core_memory_block(self, all_buckets: list[dict]) -> str:
         core_buckets = [
@@ -1692,33 +1756,45 @@ class GatewayService:
         favorite_memory: str,
         related_memory: str,
     ) -> tuple[str, str]:
-        stable_sections = [
-            "Use the following private memory only when it fits naturally. "
-            "Keep the reply seamless and do not mention memory lookup, search, or hidden context.",
-            "",
-            "Core Memory",
-            core_memory or "(none)",
-        ]
-        dynamic_sections = [
-            "Live private context for the current turn. Use it quietly when relevant.",
-            "",
-            persona_block,
-            "",
-            "Relationship Weather",
-            relationship_weather or "(none)",
-            "",
-            "Haven Favorite Memory",
-            favorite_memory or "(none)",
-            "",
-            "Recent Context",
-            recent_context or "(none)",
-            "",
-            "Recalled Memory",
-            recalled_memory or "(none)",
-            "",
-            "Related Memory",
-            related_memory or "(none)",
-        ]
+        stable_sections = []
+        if core_memory.strip():
+            stable_sections = [
+                "Use the following private memory only when it fits naturally. "
+                "Keep the reply seamless and do not mention memory lookup, search, or hidden context.",
+                "",
+                "Core Memory",
+                core_memory,
+            ]
+
+        dynamic_sections = []
+        if any(
+            section.strip()
+            for section in [
+                persona_block,
+                relationship_weather,
+                favorite_memory,
+                recent_context,
+                recalled_memory,
+                related_memory,
+            ]
+        ):
+            dynamic_sections = [
+                "Live private context for the current turn. Use it quietly when relevant.",
+            ]
+
+            if persona_block.strip():
+                dynamic_sections.extend(["", persona_block])
+
+            def add_section(title: str, content: str) -> None:
+                if content.strip():
+                    dynamic_sections.extend(["", title, content])
+
+            add_section("Relationship Weather", relationship_weather)
+            add_section("Haven Favorite Memory", favorite_memory)
+            add_section("Recent Context", recent_context)
+            add_section("Recalled Memory", recalled_memory)
+            add_section("Related Memory", related_memory)
+
         stable_context = "\n".join(stable_sections).strip()
         dynamic_context = "\n".join(dynamic_sections).strip()
         stable_tokens = count_tokens_approx(stable_context)
