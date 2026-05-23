@@ -57,6 +57,7 @@ def _bucket(
     pinned: bool = False,
     protected: bool = False,
     resolved: bool = False,
+    anchor: bool = False,
 ) -> dict:
     metadata = {
         "id": bucket_id,
@@ -78,6 +79,8 @@ def _bucket(
         metadata["protected"] = True
     if resolved:
         metadata["resolved"] = True
+    if anchor:
+        metadata["anchor"] = True
     return {"id": bucket_id, "content": content, "metadata": metadata}
 
 
@@ -285,6 +288,26 @@ async def test_core_memory_does_not_pull_related_memory_without_dynamic_source(p
     assert "[bucket_id:A]" in result
     assert "=== 关联记忆 ===" not in result
     assert "[bucket_id:B]" not in result
+
+
+@pytest.mark.asyncio
+async def test_anchor_surfaces_in_separate_slot_and_not_dynamic_pool(patch_breath):
+    import server
+
+    patch_breath(
+        [
+            _bucket("A", "A anchor memory", score=30.0, importance=9, anchor=True),
+            _bucket("D", "D ordinary memory", score=9.0),
+        ]
+    )
+
+    result = await server.breath(max_tokens=50, include_core=False)
+
+    assert "=== 长期锚点 ===" in result
+    assert "⚓ [长期锚点] [bucket_id:A]" in result
+    assert "[权重:30.00] [bucket_id:A]" not in result
+    assert "=== 浮现记忆 ===" in result
+    assert "[bucket_id:D]" in result
 
 
 @pytest.mark.asyncio

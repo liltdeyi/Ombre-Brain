@@ -1699,6 +1699,8 @@ class GatewayService:
             tags = {str(tag) for tag in meta.get("tags", [])}
             if "haven_favorite" not in tags:
                 continue
+            if not self._has_favorite_reason(bucket.get("content", "")):
+                continue
             if meta.get("resolved") or meta.get("digested"):
                 continue
             candidates.append(bucket)
@@ -1741,6 +1743,19 @@ class GatewayService:
             if remaining <= 0:
                 break
         return "\n".join(parts), selected_ids
+
+    @staticmethod
+    def _has_favorite_reason(content: str) -> bool:
+        text = strip_wikilinks(str(content or "")).lower()
+        return any(
+            marker in text
+            for marker in (
+                "喜欢它的原因",
+                "喜欢的原因",
+                "favorite_reason",
+                "favorite reason",
+            )
+        )
 
     async def _build_related_memory_block(
         self,

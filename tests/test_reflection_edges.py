@@ -501,7 +501,7 @@ async def test_gateway_builds_favorite_memory_block_and_injects_section(test_con
     cfg["gateway"]["favorite_memory_max_cards"] = 1
     bucket_mgr = BucketManager(cfg)
     favorite_id = await bucket_mgr.create(
-        content="小雨和Haven有一条特别喜欢的记忆，要在合适的时候被轻轻想起。",
+        content="小雨和Haven有一条特别喜欢的记忆，要在合适的时候被轻轻想起。\n\n### 喜欢它的原因\n\n这条记忆带着被认出来的温度。",
         tags=["haven_favorite", "flavor_偏爱"],
         importance=9,
         domain=["恋爱"],

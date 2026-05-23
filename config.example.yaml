@@ -82,7 +82,7 @@ dehydration:
 # It works beside breath surfacing and keyword search.
 # anchor 是少量长期重要记忆的标记，和 breath 浮现、关键词检索各自分工。
 anchor:
-  max_count: 24
+  max_count: 12
   min_age_hours: 24
 
 # --- Decay parameters / 记忆衰减参数 ---

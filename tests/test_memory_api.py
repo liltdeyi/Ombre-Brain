@@ -108,6 +108,45 @@ async def test_create_memory_api_writes_chatgpt_source(monkeypatch, bucket_mgr):
 
 
 @pytest.mark.asyncio
+async def test_create_memory_api_rejects_favorite_without_reason(monkeypatch, bucket_mgr):
+    import server
+
+    monkeypatch.setenv("OMBRE_GATEWAY_TOKEN", "secret")
+    monkeypatch.setattr(server, "bucket_mgr", bucket_mgr)
+    monkeypatch.setattr(server, "embedding_engine", DummyEmbeddingEngine())
+
+    response = await server.api_create_memory(
+        DummyRequest(
+            {
+                "title": "偏爱但没原因",
+                "content": "这是一条想标成偏爱的记忆。",
+                "tags": ["haven_favorite"],
+            },
+            headers={"authorization": "Bearer secret"},
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert response.status_code == 400
+    assert "喜欢它的原因" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_hold_rejects_favorite_without_reason(monkeypatch, bucket_mgr, decay_eng):
+    import server
+
+    monkeypatch.setattr(server, "bucket_mgr", bucket_mgr)
+    monkeypatch.setattr(server, "decay_engine", decay_eng)
+    monkeypatch.setattr(server, "dehydrator", DummyDehydrator())
+    monkeypatch.setattr(server, "embedding_engine", DummyEmbeddingEngine())
+
+    result = await server.hold("小雨想留下这条偏爱的记忆。", tags="haven_favorite,flavor_偏爱")
+
+    assert "喜欢它的原因" in result
+    assert await bucket_mgr.list_all(include_archive=True) == []
+
+
+@pytest.mark.asyncio
 async def test_read_bucket_returns_exact_content_without_touching(monkeypatch, bucket_mgr, decay_eng):
     import server
 
@@ -130,6 +169,26 @@ async def test_read_bucket_returns_exact_content_without_touching(monkeypatch, b
     assert payload["content"] == "小雨说她想把这一刻留下来。"
     assert payload["metadata"]["tags"] == ["haven_favorite"]
     assert after["metadata"]["last_active"] == before["metadata"]["last_active"]
+
+
+@pytest.mark.asyncio
+async def test_trace_rejects_favorite_without_reason(monkeypatch, bucket_mgr, decay_eng):
+    import server
+
+    bucket_id = await bucket_mgr.create(
+        content="小雨想留下这条记忆。",
+        name="普通记忆",
+        domain=["恋爱"],
+    )
+
+    monkeypatch.setattr(server, "bucket_mgr", bucket_mgr)
+    monkeypatch.setattr(server, "decay_engine", decay_eng)
+
+    result = await server.trace(bucket_id=bucket_id, tags="haven_favorite")
+    bucket = await bucket_mgr.get(bucket_id)
+
+    assert "喜欢它的原因" in result
+    assert "haven_favorite" not in bucket["metadata"].get("tags", [])
 
 
 @pytest.mark.asyncio

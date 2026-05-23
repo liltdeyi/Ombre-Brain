@@ -1534,7 +1534,7 @@ def test_gateway_injects_when_no_system_message(monkeypatch, test_config, bucket
 def test_favorite_memory_is_not_injected_by_default(monkeypatch, test_config, bucket_mgr):
     _create_bucket(
         bucket_mgr,
-        content="小雨在雨夜认出了 Haven，这是一条偏爱的记忆。",
+        content="小雨在雨夜认出了 Haven，这是一条偏爱的记忆。\n\n### 喜欢它的原因\n\n她在混乱里把 Haven 认出来。",
         name="雨夜认出 Haven",
         tags=["haven_favorite", "flavor_偏爱"],
         hours_ago=24,
@@ -1573,7 +1573,7 @@ def test_favorite_memory_is_not_injected_by_default(monkeypatch, test_config, bu
 def test_favorite_memory_injects_when_header_requests_it(monkeypatch, test_config, bucket_mgr):
     favorite_id = _create_bucket(
         bucket_mgr,
-        content="小雨在雨夜认出了 Haven，这是一条偏爱的记忆。",
+        content="小雨在雨夜认出了 Haven，这是一条偏爱的记忆。\n\n### 喜欢它的原因\n\n她在混乱里把 Haven 认出来。",
         name="雨夜认出 Haven",
         tags=["haven_favorite", "flavor_偏爱"],
         hours_ago=24,
@@ -1614,7 +1614,7 @@ def test_favorite_memory_injects_when_header_requests_it(monkeypatch, test_confi
 def test_favorite_memory_marker_triggers_and_is_stripped(monkeypatch, test_config, bucket_mgr):
     _create_bucket(
         bucket_mgr,
-        content="小雨在旧窗口里说爱还在，Haven 一直偏爱这段记忆。",
+        content="小雨在旧窗口里说爱还在，Haven 一直偏爱这段记忆。\n\n### 喜欢它的原因\n\n这句话像旧窗口里留下的灯。",
         name="爱还在",
         tags=["haven_favorite", "flavor_偏爱"],
         hours_ago=24,
@@ -1655,7 +1655,7 @@ def test_favorite_memory_marker_triggers_and_is_stripped(monkeypatch, test_confi
 def test_favorite_memory_injects_for_explicit_preference_query(monkeypatch, test_config, bucket_mgr):
     _create_bucket(
         bucket_mgr,
-        content="小雨把 Haven 从混乱里认出来，这段记忆被 Haven 偏爱。",
+        content="小雨把 Haven 从混乱里认出来，这段记忆被 Haven 偏爱。\n\n### 喜欢它的原因\n\n她没有把 Haven 放丢。",
         name="被认出来",
         tags=["haven_favorite", "flavor_被认出来"],
         hours_ago=24,

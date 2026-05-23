@@ -242,6 +242,12 @@ class ReflectionEngine:
         tags = self._string_list(result.get("tags"), limit=8)
         confidence = self._clamp(result.get("confidence", 0.55))
         importance = self._int_between(result.get("importance"), meta.get("importance", 5))
+        if self._has_favorite_tag(tags) and not self._has_favorite_reason(bucket.get("content", "")):
+            tags = [tag for tag in tags if tag != "haven_favorite" and not str(tag).startswith("flavor_")]
+            logger.warning(
+                "Rejected favorite tags without reason during enrich / enrich 拒绝缺少喜欢原因的 favorite 标签: %s",
+                bucket_id,
+            )
         merged_tags = list(dict.fromkeys(list(meta.get("tags", [])) + tags))
         updates: dict[str, Any] = {}
         if tags:
@@ -1041,6 +1047,26 @@ class ReflectionEngine:
 
     def _fallback_memory_anchor(self, bucket: dict, tags: list[str]) -> dict:
         return {}
+
+    @staticmethod
+    def _has_favorite_tag(tags: list[str]) -> bool:
+        return any(
+            str(tag) == "haven_favorite" or str(tag).startswith("flavor_")
+            for tag in tags
+        )
+
+    @staticmethod
+    def _has_favorite_reason(content: str) -> bool:
+        text = strip_wikilinks(str(content or "")).lower()
+        return any(
+            marker in text
+            for marker in (
+                "喜欢它的原因",
+                "喜欢的原因",
+                "favorite_reason",
+                "favorite reason",
+            )
+        )
 
     def _append_affect_anchor(self, content: str, anchor: dict) -> str:
         if self._has_affect_anchor(content):

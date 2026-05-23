@@ -589,7 +589,7 @@ def _dashboard_author_name() -> str:
 
 def _anchor_config() -> tuple[int, float]:
     anchor_cfg = config.get("anchor", {}) if isinstance(config.get("anchor", {}), dict) else {}
-    max_count = _int_between(anchor_cfg.get("max_count"), 24, 1, 200)
+    max_count = _int_between(anchor_cfg.get("max_count"), 12, 1, 200)
     try:
         min_age_hours = float(anchor_cfg.get("min_age_hours", 24))
     except (TypeError, ValueError):
@@ -627,6 +627,52 @@ async def _can_mark_anchor(bucket_id: str, bucket: dict) -> tuple[bool, str]:
     if anchor_count >= max_count:
         return False, f"anchor 名额已满（{max_count} 条）。请先取消一条旧 anchor。"
     return True, ""
+
+
+def _select_anchor_buckets(all_buckets: list[dict], limit: int = 2) -> list[dict]:
+    limit = _int_between(limit, 2, 0, 12)
+    if limit <= 0:
+        return []
+    anchors = [
+        b for b in all_buckets
+        if b.get("metadata", {}).get("anchor")
+        and not b.get("metadata", {}).get("pinned")
+        and not b.get("metadata", {}).get("protected")
+        and b.get("metadata", {}).get("type") not in {"permanent", "feel"}
+    ]
+    anchors.sort(
+        key=lambda b: (
+            int(b.get("metadata", {}).get("importance", 5)),
+            decay_engine.calculate_score(b.get("metadata", {})),
+            b.get("metadata", {}).get("updated_at") or b.get("metadata", {}).get("created", ""),
+        ),
+        reverse=True,
+    )
+    return anchors[:limit]
+
+
+def _has_favorite_tag(tags: list | set | tuple | None) -> bool:
+    return any(
+        tag == "haven_favorite" or tag.startswith("flavor_")
+        for tag in {str(item) for item in (tags or [])}
+    )
+
+
+def _has_favorite_reason(content: str) -> bool:
+    text = strip_wikilinks(str(content or "")).lower()
+    return any(
+        marker in text
+        for marker in (
+            "喜欢它的原因",
+            "喜欢的原因",
+            "favorite_reason",
+            "favorite reason",
+        )
+    )
+
+
+def _favorite_reason_error() -> str:
+    return "标记 favorite memory 需要在正文写明「喜欢它的原因」。"
 
 
 def _bucket_read_payload(bucket: dict) -> dict:
@@ -791,9 +837,11 @@ async def breath_hook(request):
         unresolved = [b for b in all_buckets
                       if not b["metadata"].get("resolved", False)
                       and b["metadata"].get("type") not in ("permanent", "feel")
+                      and not b["metadata"].get("anchor", False)
                       and not b["metadata"].get("pinned")
                       and not b["metadata"].get("protected")]
         scored = sorted(unresolved, key=lambda b: decay_engine.calculate_score(b["metadata"]), reverse=True)
+        anchors = _select_anchor_buckets(all_buckets, limit=2)
 
         parts = []
         token_budget = 10000
@@ -801,6 +849,17 @@ async def breath_hook(request):
             summary = await dehydrator.dehydrate(_bucket_text_for_embedding(b), {k: v for k, v in b["metadata"].items() if k != "tags"})
             parts.append(f"📌 [核心准则] {summary}")
             token_budget -= count_tokens_approx(summary)
+
+        for b in anchors:
+            if token_budget <= 0:
+                break
+            summary = await dehydrator.dehydrate(_bucket_text_for_embedding(b), {k: v for k, v in b["metadata"].items() if k != "tags"})
+            entry = f"⚓ [长期锚点] [bucket_id:{b['id']}] {summary}"
+            entry_tokens = count_tokens_approx(entry)
+            if entry_tokens > token_budget:
+                break
+            parts.append(entry)
+            token_budget -= entry_tokens
 
         # Diversity: top-1 fixed + shuffle rest from top-20
         candidates = list(scored)
@@ -1231,6 +1290,7 @@ async def breath(
             reverse=True,
         )
         selected_core = (protected + pinned)[:core_limit] if include_core else []
+        selected_anchors = _select_anchor_buckets(all_buckets, limit=min(2, max_results))
 
         # --- Unresolved buckets: surface top N by weight ---
         # --- 未解决桶：按权重浮现前 N 条 ---
@@ -1238,13 +1298,14 @@ async def breath(
             b for b in all_buckets
             if not b["metadata"].get("resolved", False)
             and b["metadata"].get("type") not in ("permanent", "feel")
+            and not b["metadata"].get("anchor", False)
             and not b["metadata"].get("pinned", False)
             and not b["metadata"].get("protected", False)
         ]
 
         logger.info(
             f"Breath surfacing: {len(all_buckets)} total, "
-            f"{len(core_candidates)} core, {len(unresolved)} unresolved"
+            f"{len(core_candidates)} core, {len(selected_anchors)} anchors, {len(unresolved)} unresolved"
         )
 
         scored = sorted(
@@ -1280,6 +1341,27 @@ async def breath(
                 logger.warning(f"Failed to dehydrate core bucket / 核心桶脱水失败: {e}")
                 continue
 
+        anchor_results = []
+        anchor_buckets = []
+        anchor_token_budget = min(token_budget, max(0, int(max_tokens * 0.18)))
+        for b in selected_anchors:
+            if anchor_token_budget <= 0 or token_budget <= 0:
+                break
+            try:
+                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                summary = await dehydrator.dehydrate(_bucket_text_for_embedding(b), clean_meta)
+                entry = f"⚓ [长期锚点] [bucket_id:{b['id']}] {summary}"
+                entry_tokens = count_tokens_approx(entry)
+                if entry_tokens > anchor_token_budget or entry_tokens > token_budget:
+                    break
+                anchor_results.append(entry)
+                anchor_buckets.append(b)
+                anchor_token_budget -= entry_tokens
+                token_budget -= entry_tokens
+            except Exception as e:
+                logger.warning(f"Failed to dehydrate anchor bucket / anchor 桶脱水失败: {e}")
+                continue
+
         candidates = list(scored)
         if len(candidates) > 1:
             # Ensure highest-score bucket is first, shuffle rest from top-20
@@ -1312,22 +1394,25 @@ async def breath(
                 continue
 
         related_block = ""
-        if include_related and surfaced_buckets:
+        related_sources = anchor_buckets + surfaced_buckets
+        if include_related and related_sources:
             related_header_tokens = count_tokens_approx("=== 关联记忆 ===\n")
             related_block = await _build_mcp_related_memory_block(
-                surfaced_buckets,
+                related_sources,
                 all_buckets,
                 max(0, token_budget - related_header_tokens),
                 related_per_memory,
                 edge_min_confidence,
             )
 
-        if not core_results and not dynamic_results and not related_block:
+        if not core_results and not anchor_results and not dynamic_results and not related_block:
             return "权重池平静，没有需要处理的记忆。"
 
         parts = []
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
+        if anchor_results:
+            parts.append("=== 长期锚点 ===\n" + "\n---\n".join(anchor_results))
         if dynamic_results:
             parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
         if related_block:
@@ -1477,6 +1562,8 @@ async def _select_resurface_buckets(
         if meta.get("type") in {"feel", "permanent"}:
             continue
         if meta.get("pinned") or meta.get("protected"):
+            continue
+        if meta.get("anchor"):
             continue
         dormant_days = _bucket_days_since_last_active(meta)
         importance = max(1, min(10, int(meta.get("importance", 5))))
@@ -1728,7 +1815,7 @@ async def hold(
     承诺/待办: tags 传 "commitment,todo" 或 "commitment,wish"; content 写清谁答应了什么、何时/什么条件下要继续。
     给旧记忆写年轮/再次阅读感受: 优先用 comment_bucket(bucket_id="...", content="...", kind="feel", valence=0.x, arousal=0.x)。
     无源记忆的碎碎念/悄悄话: 用 hold(content="...", whisper=True, valence=0.x, arousal=0.x),会存为独立 feel 并打 whisper 标签。
-    新记忆本身值得偏爱: tags 可传 "haven_favorite,flavor_偏爱"; content 可包含很短的 "### 喜欢它的原因" 段落。
+    新记忆本身值得偏爱: tags 可传 "haven_favorite,flavor_偏爱"; content 必须包含很短的 "### 喜欢它的原因" 段落。
     普通写入会新建 bucket,写 embedding,后台触发 ReflectionEngine 补 tags/confidence/memory_edges,并返回一条只读相关旧记忆。
     pinned=True 只给极少数核心准则,技术进度和运维细节不要钉选。
     feel=True 且带 source_bucket 是旧兼容入口,新调用不要使用；feel=True 但没有 source_bucket 会转为 whisper。
@@ -1819,6 +1906,8 @@ async def hold(
     suggested_name = analysis.get("suggested_name", "")
 
     all_tags = list(dict.fromkeys(auto_tags + extra_tags))
+    if _has_favorite_tag(all_tags) and not _has_favorite_reason(content):
+        return _favorite_reason_error()
 
     # --- Pinned buckets bypass merge and are created directly in permanent dir ---
     # --- 钉选桶跳过合并，直接新建到 permanent 目录 ---
@@ -1892,9 +1981,12 @@ async def grow(content: str) -> str:
                 "domain": ["未分类"], "valence": 0.5, "arousal": 0.3,
                 "tags": [], "suggested_name": "",
             }
+        fast_tags = analysis.get("tags", [])
+        if _has_favorite_tag(fast_tags) and not _has_favorite_reason(content):
+            return _favorite_reason_error()
         bucket_id, result_name, is_merged, related_bucket = await _merge_or_create(
             content=content.strip(),
-            tags=analysis.get("tags", []),
+            tags=fast_tags,
             importance=analysis.get("importance", 5) if isinstance(analysis.get("importance"), int) else 5,
             domain=analysis.get("domain", ["未分类"]),
             valence=analysis.get("valence", 0.5),
@@ -1925,9 +2017,13 @@ async def grow(content: str) -> str:
     # --- 逐条合并或新建（单条失败不影响其他）---
     for item in items:
         try:
+            item_tags = item.get("tags", [])
+            if _has_favorite_tag(item_tags) and not _has_favorite_reason(item.get("content", "")):
+                results.append("⚠️favorite 缺少喜欢它的原因")
+                continue
             bucket_id, result_name, is_merged, related_bucket = await _merge_or_create(
                 content=item["content"],
-                tags=item.get("tags", []),
+                tags=item_tags,
                 importance=item.get("importance", 5),
                 domain=item.get("domain", ["未分类"]),
                 valence=item.get("valence", 0.5),
@@ -2029,6 +2125,11 @@ async def trace(
 
     if not updates:
         return "没有任何字段需要修改。"
+
+    effective_tags = updates.get("tags", bucket.get("metadata", {}).get("tags", []))
+    effective_content = updates.get("content", bucket.get("content", ""))
+    if _has_favorite_tag(effective_tags) and not _has_favorite_reason(effective_content):
+        return _favorite_reason_error()
 
     success = await bucket_mgr.update(bucket_id, **updates)
     if not success:
@@ -2317,6 +2418,8 @@ async def api_create_memory(request):
     now = _current_time_iso()
     domain = _string_list(body.get("domain"), ["未分类"])
     tags = _string_list(body.get("tags"), [])
+    if _has_favorite_tag(tags) and not _has_favorite_reason(content):
+        return JSONResponse({"error": _favorite_reason_error()}, status_code=400)
     importance = _int_between(body.get("importance"), 5)
     valence = _float_between(body.get("valence"), 0.5)
     arousal = _float_between(body.get("arousal"), 0.5)
@@ -2477,6 +2580,8 @@ async def api_bucket_update(request):
         return JSONResponse({"error": "not found"}, status_code=404)
 
     meta = bucket.get("metadata", {})
+    if _has_favorite_tag(meta.get("tags", [])) and not _has_favorite_reason(content):
+        return JSONResponse({"error": _favorite_reason_error()}, status_code=400)
     ok = await bucket_mgr.update(
         bucket_id,
         content=content,
