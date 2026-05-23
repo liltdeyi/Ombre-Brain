@@ -320,6 +320,42 @@ Token endpoint auth method: client_secret_post
 Scopes: 留空
 ```
 
+### Dashboard 登录
+
+Dashboard 有单独的网页登录，不等同于 Gateway 的 `OMBRE_GATEWAY_TOKEN`，也不等同于 ChatGPT Connector OAuth。
+
+```text
+Dashboard: http://<host>:18001/dashboard
+```
+
+首次打开 Dashboard 时，如果没有配置 `OMBRE_DASHBOARD_PASSWORD`，页面会要求设置一个至少 6 位的访问密码。密码不会明文保存；服务端会把 salted sha256 hash 写到 state 目录：
+
+```text
+本地默认: ./state/.dashboard_auth.json
+Docker/VPS 常见: /srv/ombre-brain/state/.dashboard_auth.json
+```
+
+也可以直接用环境变量固定 Dashboard 密码：
+
+```env
+OMBRE_DASHBOARD_PASSWORD=your-dashboard-password
+```
+
+配置了 `OMBRE_DASHBOARD_PASSWORD` 后，Dashboard 会跳过首次设置流程，登录时只校验这个环境变量；已有 `.dashboard_auth.json` 不再生效。
+
+登录成功后，服务端会下发 `ombre_session` cookie，有效期 7 天。session 只保存在当前进程内存里，所以容器重启后需要重新登录。
+
+忘记 Dashboard 密码时：
+
+```bash
+# 如果用的是 OMBRE_DASHBOARD_PASSWORD：改 .env / compose 环境变量后重启服务
+
+# 如果用的是首次设置生成的密码：停服务后删除 auth 文件，再启动并重新设置
+rm /srv/ombre-brain/state/.dashboard_auth.json
+```
+
+对外部署时建议至少保留 Dashboard 密码；公开域名访问时再配合反向代理 HTTPS / 防火墙限制。
+
 ## MCP 工具口径
 
 | 工具 | 口径 |
