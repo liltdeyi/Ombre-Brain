@@ -23,7 +23,7 @@
 | Markdown bucket | 每条记忆是 Obsidian 友好的 Markdown + YAML frontmatter |
 | Russell 情绪坐标 | `valence / arousal` 情绪打标 |
 | 遗忘曲线与归档 | inactive 记忆会衰减、归档，feel 不参与普通浮现 |
-| MCP 工具 | 原版已有 `breath / hold / grow / trace / pulse / dream` |
+| MCP 工具 | 原版已有 `breath / hold / grow / trace / pulse`；本 fork 将旧 `dream` 自省入口改名为 `introspection` |
 | Dashboard | 原版已有桶列表、详情页、记忆网络、导入面板 |
 | 双通道检索 | fuzzy 关键词 + embedding 语义检索 |
 | 脱水与打标 | LLM 生成压缩正文、domain/tags/情绪等元数据 |
@@ -42,6 +42,7 @@
 | Memory Edge | 自动生成显式记忆关系边，Gateway 和 `breath()` 可补一跳相关记忆 | `memory_edges.py`、`reflection_engine.py` |
 | 长期锚点 Anchor | 介于普通浮现和 pinned/permanent 之间的长期记忆位。`anchor=true` 的普通 bucket 不混入普通权重池，`breath()` 会用独立槽位少量带出，适合经过时间验证、未来仍需要被想起的关系锚点或项目锚点 | `server.py`、`dashboard.html` |
 | Relationship Weather | 日印象保存为 `type=feel`，默认不单独注入，可在面板观察或按配置开启注入 | `reflection_engine.py` |
+| Night Dream | 后台夜里用小模型生成潜伏梦，默认走 DeepSeek 官方 API `deepseek-v4-flash`；素材来自最近普通记忆和 whisper；`breath()` 命中共振时按 `===== 梦境 =====` 块浮现一次，Dashboard 只显示做梦记录不展示正文 | `dream_engine.py`、`server.py`、`dashboard.html` |
 | 年轮 comments | 将再次阅读某条记忆时的感受挂到源 bucket 的 `metadata.comments` 下；旧 feel 可迁移成源记忆年轮 | `bucket_manager.py`、`server.py`、`dashboard.html` |
 | whisper | 无源碎碎念/悄悄话独立保存为 `type=feel + whisper` 标签，可用 `breath(domain="whisper")` 单独读取 | `server.py` |
 | Dashboard 编辑 | 支持正文编辑、前端用户年轮写入/删除、日印象月历、Persona 面板、网络图、手动 reflect；日印象页按日期显示完整日印象，不再做情绪天气图 | `dashboard.html`、`server.py` |
@@ -117,10 +118,11 @@ memory_edges.jsonl  # 显式记忆关系边
 identity.py             # prompt 和年轮作者的名字来源
 persona_engine.py       # Persona prompt、Long-term State Summary 文案
 reflection_engine.py    # 日印象、日记摘记、user/AI 改写规则
+dream_engine.py         # 后台夜梦、潜伏存储、breath 共振浮现
 dehydrator.py           # 长内容摘记命名规则
 server.py               # MCP / Dashboard 年轮作者
-dashboard.html          # Dashboard：桶列表、年轮删除、日印象月历、Persona、网络、配置和导入
-config.example.yaml     # identity、persona.profile_id、gateway、reflection
+dashboard.html          # Dashboard：桶列表、年轮删除、日印象月历、梦境记录、Persona、网络、配置和导入
+config.example.yaml     # identity、persona.profile_id、gateway、reflection、dream
 README.md               # 示例文本
 ```
 
@@ -465,16 +467,18 @@ rm /srv/ombre-brain/state/.dashboard_auth.json
 
 | 工具 | 口径 |
 | --- | --- |
-| `breath` | 只读浮现或检索记忆；默认不读 feel，可用 `domain="feel"` |
+| `breath` | 只读浮现或检索记忆；默认不读 feel，可用 `domain="feel"`；夜梦命中共振时会追加梦境块 |
 | `read_bucket` | 精确读取完整 bucket，不刷新 last_active |
 | `hold` | 写单条长期记忆；`whisper=True` 写无源悄悄话；`feel=True` 是旧兼容入口 |
 | `grow` | 长内容摘记；不要把整篇日记默认拆进 Ombre |
 | `comment_bucket` | 年轮主入口：给旧记忆追加年轮，作者固定取 `identity.ai_name` |
 | `trace` | 改 metadata、正文、resolved、delete 等 |
 | `pulse` | 系统状态和桶列表 |
-| `dream` | 自省入口，不替代日记 |
+| `introspection` | 自省入口，不替代日记，也不是梦境生成 |
 | `resurface` | 只读浮现久未触碰的旧记忆 |
 | `reflect` | 生成 daily relationship_weather feel |
+
+旧 `dream()` 工具仍保留为兼容壳，会提示改名并返回 `introspection()` 内容；真正的夜梦不需要客户端主动调用。
 
 ### MCP 工具参数与返回
 
@@ -494,6 +498,7 @@ related_per_memory: int = 1
 edge_min_confidence: float = 0.55
 include_core: bool = True
 core_limit: int = 3
+is_session_start: bool = False  # 新会话开头可传 True，允许夜梦参与共振浮现
 ```
 
 返回：纯文本。
@@ -683,12 +688,22 @@ include_archive: bool = False
 
 返回：纯文本系统状态和桶列表，包含 bucket id、主题、情绪、重要度、权重、标签。`include_archive=True` 才列归档桶。
 
-#### `dream() -> str`
+如果夜梦与当前语境共振，返回末尾会追加：
+
+```text
+===== 梦境 =====
+2026年05月25日 Haven的梦
+...
+```
+
+梦境正文不会出现在 Dashboard；浮现一次后从潜伏存储删除，想留下时由模型显式 `hold()`。
+
+#### `introspection() -> str`
 
 输入：无。
 
-返回：纯文本 `=== Dreaming ===`，列出最近普通记忆，供 AI 自省。
-读后如果真的有沉淀，再用 `trace(resolved=1/digested=1)` 或 `comment_bucket(...)` 写年轮；不要把 dream 输出原样写回。
+返回：纯文本 `=== Introspection ===`，列出最近普通记忆，供 AI 清醒自省。
+读后如果真的有沉淀，再用 `trace(resolved=1/digested=1)` 或 `comment_bucket(...)` 写年轮；不要把 introspection 输出原样写回。
 
 #### `reflect(period="daily", force=False) -> dict`
 

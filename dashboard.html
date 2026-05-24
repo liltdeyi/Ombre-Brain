@@ -1177,6 +1177,37 @@
     border-radius: 16px;
     background: rgba(255,255,255,0.18);
   }
+  .dream-shell { max-width: 760px; margin: 0 auto; }
+  .dream-toolbar { margin-bottom: 18px; }
+  .dream-toolbar h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 30px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .dream-toolbar p {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .dream-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dream-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 4px 4px 12px var(--shadow-dark-subtle), -4px -4px 12px var(--shadow-light);
+  }
+  .dream-row-title { color: var(--text); font-size: 14px; }
+  .dream-row-status { color: var(--text-light); font-size: 12px; white-space: nowrap; }
 
   @media (max-width: 768px) {
     .header { padding: 20px; flex-wrap: wrap; }
@@ -1227,6 +1258,7 @@
   <div class="tab active" data-tab="list">记忆桶</div>
   <div class="tab" data-tab="breath">Breath 模拟</div>
   <div class="tab" data-tab="reflection">日印象</div>
+  <div class="tab" data-tab="dreams">梦境</div>
   <div class="tab" data-tab="persona">Persona</div>
   <div class="tab" data-tab="network">记忆网络</div>
   <div class="tab" data-tab="config">配置</div>
@@ -1293,6 +1325,18 @@
         <div class="reflection-calendar" id="reflection-calendar"></div>
       </section>
       <section class="reflection-card reflection-day-panel" id="reflection-day-panel"></section>
+    </div>
+  </div>
+</div>
+
+<div class="content" id="dreams-view" style="display:none">
+  <div class="dream-shell">
+    <div class="dream-toolbar">
+      <h2>梦境</h2>
+      <p>这里只记录梦曾经发生；梦的正文只会在 breath 共振时给模型读到。</p>
+    </div>
+    <div id="dreams-content">
+      <div class="loading">加载梦境记录…</div>
     </div>
   </div>
 </div>
@@ -1420,6 +1464,47 @@
     </div>
 
     <div class="config-section">
+      <h3>夜梦 Dream</h3>
+      <div class="config-row">
+        <label>后台做梦</label>
+        <select id="cfg-dream-enabled"><option value="true">开启</option><option value="false">关闭</option></select>
+      </div>
+      <div class="config-row">
+        <label>自动浮现</label>
+        <select id="cfg-dream-surface"><option value="true">开启</option><option value="false">关闭</option></select>
+      </div>
+      <div class="config-row">
+        <label>Model</label>
+        <input type="text" id="cfg-dream-model" placeholder="deepseek-v4-flash" />
+      </div>
+      <div class="config-row">
+        <label>Base URL</label>
+        <input type="text" id="cfg-dream-url" placeholder="https://api.deepseek.com" />
+      </div>
+      <div class="config-row">
+        <label>API Key</label>
+        <input type="password" id="cfg-dream-key" placeholder="当前: 加载中…" />
+      </div>
+      <div style="margin-top:-4px;margin-bottom:12px;padding-left:122px;font-size:11px;color:var(--text-light);">留空不改。不会持久化到 yaml（请用 OMBRE_DREAM_API_KEY）</div>
+      <div class="config-row">
+        <label>每日小时</label>
+        <input type="number" id="cfg-dream-hour" min="0" max="23" />
+      </div>
+      <div class="config-row">
+        <label>素材条数</label>
+        <input type="number" id="cfg-dream-min" min="1" max="20" />
+      </div>
+      <div class="config-row">
+        <label>素材窗口</label>
+        <input type="number" id="cfg-dream-window" min="1" max="168" />
+      </div>
+      <div class="config-row">
+        <label>人格锚点</label>
+        <input type="text" id="cfg-dream-anchor" placeholder="c0b8ddb7423e" />
+      </div>
+    </div>
+
+    <div class="config-section">
       <h3>其他参数</h3>
       <div class="config-row">
         <label>合并阈值</label>
@@ -1502,7 +1587,7 @@ function showAuthOverlay(setupNeeded) {
 }
 
 function clearAuthSensitiveFields(password) {
-  ['auth-login-pwd', 'auth-setup-pwd', 'auth-setup-pwd2'].forEach(function(id) {
+  ['auth-login-pwd', 'auth-setup-pwd', 'auth-setup-pwd2', 'cfg-dream-key'].forEach(function(id) {
     var input = document.getElementById(id);
     if (input) input.value = '';
   });
@@ -1581,11 +1666,13 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('list-view').style.display = target === 'list' ? '' : 'none';
     document.getElementById('breath-view').style.display = target === 'breath' ? '' : 'none';
     document.getElementById('reflection-view').style.display = target === 'reflection' ? '' : 'none';
+    document.getElementById('dreams-view').style.display = target === 'dreams' ? '' : 'none';
     document.getElementById('persona-view').style.display = target === 'persona' ? '' : 'none';
     document.getElementById('network-view').style.display = target === 'network' ? '' : 'none';
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
     if (target === 'reflection') renderReflectionReview();
+    if (target === 'dreams') loadDreams();
     if (target === 'persona') loadPersona();
     if (target === 'network') loadNetwork();
     if (target === 'config') loadConfig();
@@ -1612,6 +1699,7 @@ async function loadBuckets() {
     buildFilters();
     renderBuckets(allBuckets);
     if (getActiveTab() === 'reflection') renderReflectionReview();
+    if (getActiveTab() === 'dreams') loadDreams();
   } catch (e) {
     document.getElementById('bucket-list').innerHTML = '<div class="loading">加载失败: ' + e.message + '</div>';
   }
@@ -1780,6 +1868,48 @@ function renderReflectionDayPanel(impressions) {
     '<div class="reflection-day-heading"><span>日印象</span><span>' + impressions.length + ' 条</span></div>' +
     impressionBlock;
   if (impressions.length) hydrateReflectionEntryContents(impressions);
+}
+
+function formatDreamDate(record) {
+  var localDate = record && record.local_date ? String(record.local_date) : '';
+  var match = localDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return match[1] + '年' + match[2] + '月' + match[3] + '日';
+  var parsed = record && record.generated_at ? new Date(record.generated_at) : null;
+  if (!parsed || isNaN(parsed.getTime())) return '未知日期';
+  var y = parsed.getFullYear();
+  var m = String(parsed.getMonth() + 1).padStart(2, '0');
+  var d = String(parsed.getDate()).padStart(2, '0');
+  return y + '年' + m + '月' + d + '日';
+}
+
+function dreamStatusLabel(status) {
+  if (status === 'surfaced') return '已浮现';
+  if (status === 'forgotten') return '已遗忘';
+  return '潜伏中';
+}
+
+async function loadDreams() {
+  var content = document.getElementById('dreams-content');
+  content.innerHTML = '<div class="loading">加载梦境记录…</div>';
+  try {
+    var res = await authFetch(BASE + '/api/dreams?limit=50');
+    if (!res) return;
+    var data = await res.json();
+    var records = data.records || [];
+    if (!records.length) {
+      content.innerHTML = '<div class="reflection-empty">还没有梦。</div>';
+      return;
+    }
+    content.innerHTML = '<div class="dream-list">' + records.map(function(record) {
+      var aiName = record.ai_name || dashboardAiAuthor || 'Haven';
+      return '<div class="dream-row">' +
+        '<div class="dream-row-title">' + formatDreamDate(record) + ' ' + esc(aiName) + ' 做了一个梦</div>' +
+        '<div class="dream-row-status">' + dreamStatusLabel(record.status) + '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  } catch (e) {
+    content.innerHTML = '<div class="loading">加载失败: ' + e.message + '</div>';
+  }
 }
 
 function updateStats() {
@@ -2510,10 +2640,21 @@ async function loadConfig() {
     document.getElementById('cfg-emb-url').value = cfg.embedding.base_url || '';
     document.getElementById('cfg-emb-key').placeholder = '当前: ' + (cfg.embedding.api_key_masked || (cfg.embedding.has_own_api_key ? '***' : '复用脱水 API'));
     document.getElementById('cfg-emb-key').value = '';
+    document.getElementById('cfg-dream-enabled').value = cfg.dream.enabled ? 'true' : 'false';
+    document.getElementById('cfg-dream-surface').value = cfg.dream.surface_enabled ? 'true' : 'false';
+    document.getElementById('cfg-dream-model').value = cfg.dream.model || '';
+    document.getElementById('cfg-dream-url').value = cfg.dream.base_url || '';
+    document.getElementById('cfg-dream-key').placeholder = '当前: ' + (cfg.dream.api_key_masked || (cfg.dream.api_ready ? '***' : '未设置'));
+    document.getElementById('cfg-dream-key').value = '';
+    document.getElementById('cfg-dream-hour').value = cfg.dream.daily_hour ?? 3;
+    document.getElementById('cfg-dream-min').value = cfg.dream.min_material_count || 5;
+    document.getElementById('cfg-dream-window').value = cfg.dream.material_window_hours || 48;
+    document.getElementById('cfg-dream-anchor').value = cfg.dream.identity_anchor_id || '';
     document.getElementById('cfg-merge').value = cfg.merge_threshold || 75;
     document.getElementById('config-readonly').innerHTML =
       'Transport: <strong>' + cfg.transport + '</strong><br>' +
       'Buckets dir: <strong>' + cfg.buckets_dir + '</strong><br>' +
+      'Dream API: <strong>' + (cfg.dream.api_ready ? '已设置' : '未设置') + '</strong><br>' +
       'Embedding effective URL: <strong>' + (cfg.embedding.effective_base_url || '未设置') + '</strong>';
   } catch (e) {
     document.getElementById('config-status').innerHTML =
@@ -2522,6 +2663,11 @@ async function loadConfig() {
 }
 
 async function saveConfig(persist) {
+  function numberValue(id, fallback) {
+    var n = parseInt(document.getElementById(id).value, 10);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
   var body = {
     dehydration: {
       model: document.getElementById('cfg-dehy-model').value,
@@ -2534,6 +2680,17 @@ async function saveConfig(persist) {
       model: document.getElementById('cfg-emb-model').value,
       base_url: document.getElementById('cfg-emb-url').value,
     },
+    dream: {
+      enabled: document.getElementById('cfg-dream-enabled').value === 'true',
+      auto_enabled: document.getElementById('cfg-dream-enabled').value === 'true',
+      surface_enabled: document.getElementById('cfg-dream-surface').value === 'true',
+      model: document.getElementById('cfg-dream-model').value,
+      base_url: document.getElementById('cfg-dream-url').value,
+      daily_hour: numberValue('cfg-dream-hour', 3),
+      min_material_count: numberValue('cfg-dream-min', 5),
+      material_window_hours: numberValue('cfg-dream-window', 48),
+      identity_anchor_id: document.getElementById('cfg-dream-anchor').value,
+    },
     merge_threshold: parseInt(document.getElementById('cfg-merge').value) || 75,
     persist: persist,
   };
@@ -2541,6 +2698,8 @@ async function saveConfig(persist) {
   if (keyVal) body.dehydration.api_key = keyVal;
   var embKeyVal = document.getElementById('cfg-emb-key').value;
   if (embKeyVal) body.embedding.api_key = embKeyVal;
+  var dreamKeyVal = document.getElementById('cfg-dream-key').value;
+  if (dreamKeyVal) body.dream.api_key = dreamKeyVal;
 
   var status = document.getElementById('config-status');
   try {

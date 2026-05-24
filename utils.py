@@ -178,6 +178,31 @@ def load_config(config_path: str = None) -> dict:
             "diary_memory_extract_max_per_day": 1,
             "diary_memory_extract_min_confidence": 0.68,
         },
+        "dream": {
+            "enabled": True,
+            "auto_enabled": True,
+            "surface_enabled": True,
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-v4-flash",
+            "api_key": "",
+            "temperature": 0.85,
+            "max_tokens": 900,
+            "timezone": "Asia/Shanghai",
+            "daily_hour": 3,
+            "run_window_hours": 3,
+            "check_interval_minutes": 60,
+            "min_material_count": 5,
+            "material_window_hours": 48,
+            "material_limit": 5,
+            "identity_anchor_id": "c0b8ddb7423e",
+            "min_surface_age_hours": 3,
+            "surface_threshold": 0.62,
+            "attempt_threshold": 0.45,
+            "alpha_subordinate": 0.25,
+            "spontaneous_surface_prob": 0.02,
+            "max_surface_attempts": 4,
+            "claim_ttl_minutes": 15,
+        },
     }
 
     # --- Load user config from YAML file ---
@@ -204,6 +229,34 @@ def load_config(config_path: str = None) -> dict:
             logging.warning(
                 f"Failed to parse config file, using defaults / "
                 f"配置文件解析失败，使用默认配置: {e}"
+            )
+
+    env_buckets_dir_early = os.environ.get("OMBRE_BUCKETS_DIR", "")
+    if env_buckets_dir_early:
+        config["buckets_dir"] = env_buckets_dir_early
+    env_state_dir_early = os.environ.get("OMBRE_STATE_DIR", "")
+    if env_state_dir_early:
+        config["state_dir"] = env_state_dir_early
+
+    runtime_config_path = os.environ.get("OMBRE_RUNTIME_CONFIG_PATH", "")
+    if not runtime_config_path:
+        runtime_state_dir = config.get("state_dir") or os.path.join(
+            os.path.dirname(os.path.abspath(config["buckets_dir"])),
+            "state",
+        )
+        runtime_config_path = os.path.join(runtime_state_dir, "config.runtime.yaml")
+    config["_runtime_config_path"] = runtime_config_path
+    if os.path.exists(runtime_config_path):
+        try:
+            with open(runtime_config_path, "r", encoding="utf-8") as f:
+                runtime_config = yaml.safe_load(f) or {}
+            if isinstance(runtime_config, dict):
+                config = _deep_merge(config, runtime_config)
+                config["_runtime_config_path"] = runtime_config_path
+        except yaml.YAMLError as e:
+            logging.warning(
+                f"Failed to parse runtime config, ignoring / "
+                f"运行时配置解析失败，已忽略: {e}"
             )
 
     # --- Environment variable overrides (highest priority) ---
@@ -317,6 +370,27 @@ def load_config(config_path: str = None) -> dict:
     env_diary_mcp_token_env = os.environ.get("OMBRE_DIARY_MCP_TOKEN_ENV", "")
     if env_diary_mcp_token_env:
         config.setdefault("reflection", {})["diary_mcp_token_env"] = env_diary_mcp_token_env
+
+    env_dream_api_key = os.environ.get("OMBRE_DREAM_API_KEY", "")
+    if env_dream_api_key:
+        config.setdefault("dream", {})["api_key"] = env_dream_api_key
+
+    env_dream_base_url = os.environ.get("OMBRE_DREAM_BASE_URL", "")
+    if env_dream_base_url:
+        config.setdefault("dream", {})["base_url"] = env_dream_base_url
+
+    env_dream_model = os.environ.get("OMBRE_DREAM_MODEL", "")
+    if env_dream_model:
+        config.setdefault("dream", {})["model"] = env_dream_model
+
+    env_dream_enabled = os.environ.get("OMBRE_DREAM_ENABLED", "")
+    if env_dream_enabled:
+        config.setdefault("dream", {})["enabled"] = env_dream_enabled.lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
 
     # --- Ensure bucket storage directories exist ---
     # --- 确保记忆桶存储目录存在 ---

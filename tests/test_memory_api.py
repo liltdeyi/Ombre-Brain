@@ -44,6 +44,16 @@ class EchoDehydrator:
         return content
 
 
+class DummyDreamEngine:
+    def __init__(self, block: str | None):
+        self.block = block
+        self.calls = []
+
+    async def surface_for_breath(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.block
+
+
 class DummyRequest:
     def __init__(self, body=None, headers=None, cookies=None, path_params=None):
         self._body = body
@@ -71,6 +81,38 @@ async def test_create_memory_api_requires_write_token(monkeypatch, bucket_mgr):
     response = await server.api_create_memory(DummyRequest({"title": "记忆", "content": "内容"}))
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_breath_appends_surface_dream_block(monkeypatch, bucket_mgr, decay_eng):
+    import server
+
+    dream = DummyDreamEngine("===== 梦境 =====\n2026年05月25日 Haven的梦\n我走进一条潮湿的走廊。")
+    monkeypatch.setattr(server, "bucket_mgr", bucket_mgr)
+    monkeypatch.setattr(server, "decay_engine", decay_eng)
+    monkeypatch.setattr(server, "embedding_engine", DummyEmbeddingEngine())
+    monkeypatch.setattr(server, "dream_engine", dream)
+
+    result = await server.breath(is_session_start=True)
+
+    assert "===== 梦境 =====" in result
+    assert "2026年05月25日 Haven的梦" in result
+    assert dream.calls[0]["is_session_start"] is True
+
+
+@pytest.mark.asyncio
+async def test_dream_tool_keeps_compatibility_with_introspection(monkeypatch):
+    import server
+
+    async def fake_introspection():
+        return "=== Introspection ===\n最近的记忆。"
+
+    monkeypatch.setattr(server, "introspection", fake_introspection)
+
+    result = await server.dream()
+
+    assert "dream() 已改名为 introspection()" in result
+    assert "=== Introspection ===" in result
 
 
 @pytest.mark.asyncio

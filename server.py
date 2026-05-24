@@ -28,6 +28,8 @@
 #                系统状态 + 所有桶列表
 #       reflect — Daily relationship weather
 #                 日关系天气
+#       introspection — Read recent memories for waking self-reflection
+#                       读取最近记忆供清醒自省
 #
 # Startup:
 # 启动方式：
@@ -62,6 +64,7 @@ from mcp.server.fastmcp import FastMCP
 from bucket_manager import BucketManager
 from dehydrator import Dehydrator
 from decay_engine import DecayEngine
+from dream_engine import DreamEngine
 from embedding_engine import EmbeddingEngine
 from identity import identity_names
 from import_memory import ImportEngine
@@ -93,6 +96,7 @@ import_engine = ImportEngine(config, bucket_mgr, dehydrator, embedding_engine)  
 persona_engine = PersonaStateEngine(config)           # Persona state engine / 人格状态引擎
 memory_edge_store = MemoryEdgeStore(config)            # Explicit memory relationship edges / 显式记忆关系边
 reflection_engine = ReflectionEngine(config)           # Reflection worker / 关系天气与关系整理
+dream_engine = DreamEngine(config)                     # Night dream worker / 夜梦
 
 # --- Create MCP server instance / 创建 MCP 服务器实例 ---
 # host="0.0.0.0" so Docker container's SSE is externally reachable
@@ -897,9 +901,10 @@ async def breath_hook(request):
 
 
 # =============================================================
-# /dream-hook endpoint: Dedicated hook for Dreaming
-# Dreaming 专用挂载点
+# /introspection-hook endpoint: Dedicated hook for waking self-reflection
+# 清醒自省专用挂载点。/dream-hook 暂时保留兼容旧接入。
 # =============================================================
+@mcp.custom_route("/introspection-hook", methods=["GET"])
 @mcp.custom_route("/dream-hook", methods=["GET"])
 async def dream_hook(request):
     from starlette.responses import PlainTextResponse
@@ -927,9 +932,9 @@ async def dream_hook(request):
                 f"{_bucket_text_for_embedding(b)[:200]}"
             )
 
-        return PlainTextResponse("[Ombre Brain - Dreaming]\n" + "\n---\n".join(parts))
+        return PlainTextResponse("[Ombre Brain - Introspection]\n" + "\n---\n".join(parts))
     except Exception as e:
-        logger.warning(f"Dream hook failed: {e}")
+        logger.warning(f"Introspection hook failed: {e}")
         return PlainTextResponse("")
 
 
@@ -1218,10 +1223,12 @@ async def breath(
     edge_min_confidence: float = 0.55,
     include_core: bool = True,
     core_limit: int = 3,
+    is_session_start: bool = False,
 ) -> str:
     """读取记忆,不写入。
-    调用方式: 新对话用 breath(); 查过去用 breath(query="主题词"); 只读模型感受用 breath(domain="feel"); 只读悄悄话用 breath(domain="whisper")。
+    调用方式: 新对话用 breath(is_session_start=True); 查过去用 breath(query="主题词"); 只读模型感受用 breath(domain="feel"); 只读悄悄话用 breath(domain="whisper")。
     默认只从本次实际返回的普通记忆沿持久化 memory_edges 带一跳关联记忆; embedding 相似边只是检索/图谱参考,不是可手写的记忆关系。
+    如果夜梦与当前语境共振,breath 会追加 ===== 梦境 ===== 块;梦只浮现一次。
     include_core/core_limit 控制 pinned/protected 核心准则数量; include_related=False 可关闭关联记忆块。
     """
     await decay_engine.ensure_started()
@@ -1232,6 +1239,7 @@ async def breath(
     edge_min_confidence = _float_between(edge_min_confidence, 0.55, 0.0, 1.0)
     include_core = _bool_value(include_core, True)
     core_limit = _int_between(core_limit, 3, 0, 20)
+    is_session_start = _bool_value(is_session_start, False)
     domain_key = domain.strip().lower()
 
     # --- Feel/whisper retrieval: independent read-only channels ---
@@ -1412,9 +1420,6 @@ async def breath(
                 edge_min_confidence,
             )
 
-        if not core_results and not anchor_results and not dynamic_results and not related_block:
-            return "权重池平静，没有需要处理的记忆。"
-
         parts = []
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
@@ -1424,6 +1429,19 @@ async def breath(
             parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
         if related_block:
             parts.append("=== 关联记忆 ===\n" + related_block)
+
+        dream_block = await dream_engine.surface_for_breath(
+            query="",
+            valence=valence,
+            arousal=arousal,
+            is_session_start=is_session_start,
+            embedding_engine=embedding_engine,
+        )
+        if dream_block:
+            parts.append(dream_block)
+
+        if not parts:
+            return "权重池平静，没有需要处理的记忆。"
         return "\n\n".join(parts)
 
     # --- With args: search mode (keyword + vector dual channel) ---
@@ -1546,10 +1564,21 @@ async def breath(
         except Exception as e:
             logger.warning(f"Resurface failed / 久未触碰浮现失败: {e}")
 
-    if not results:
-        return "未找到相关记忆。"
+    dream_block = await dream_engine.surface_for_breath(
+        query=query,
+        valence=valence,
+        arousal=arousal,
+        is_session_start=is_session_start,
+        embedding_engine=embedding_engine,
+    )
 
-    return "\n---\n".join(results)
+    if not results:
+        return dream_block or "未找到相关记忆。"
+
+    response_text = "\n---\n".join(results)
+    if dream_block:
+        response_text += "\n\n" + dream_block
+    return response_text
 
 
 async def _select_resurface_buckets(
@@ -2238,8 +2267,8 @@ async def pulse(include_archive: bool = False) -> str:
 
 
 # =============================================================
-# Tool 6: dream — Dreaming, digest recent memories
-# 工具 6：dream — 做梦，消化最近的记忆
+# Tool 6: introspection — waking self-reflection over recent memories
+# 工具 6：introspection — 清醒自省，消化最近的记忆
 #
 # Reads recent surface-level buckets (≤10), returns them for
 # Claude to introspect under prompt guidance.
@@ -2247,17 +2276,17 @@ async def pulse(include_archive: bool = False) -> str:
 # Claude then decides: resolve some, write feels, or do nothing.
 # =============================================================
 @mcp.tool()
-async def dream() -> str:
-    """读取最近普通记忆供 AI 自省,不是日记整理。
+async def introspection() -> str:
+    """读取最近普通记忆供 AI 清醒自省,不是梦境生成,也不是日记整理。
     读后只在真的可以放下时 trace(resolved=1/digested=1),或在产生新的第一人称沉淀/喜欢原因时 comment_bucket(bucket_id, content)。
-    不要把 dream 返回内容直接再写成普通 bucket。
+    不要把 introspection 返回内容直接再写成普通 bucket。
     """
     await decay_engine.ensure_started()
 
     try:
         all_buckets = await bucket_mgr.list_all(include_archive=False)
     except Exception as e:
-        logger.error(f"Dream failed to list buckets: {e}")
+        logger.error(f"Introspection failed to list buckets: {e}")
         return "记忆系统暂时无法访问。"
 
     # --- Filter: recent surface-level dynamic buckets (not permanent/pinned/feel) ---
@@ -2292,7 +2321,7 @@ async def dream() -> str:
         )
 
     header = (
-        "=== Dreaming ===\n"
+        "=== Introspection ===\n"
         "以下是你最近的记忆。用第一人称想：\n"
         "- 这些东西里有什么在你这里留下了重量？\n"
         "- 有什么还没想清楚？\n"
@@ -2329,7 +2358,7 @@ async def dream() -> str:
                     f"似乎有关联 (相似度:{best_sim:.2f})——不替你下结论，你自己想。\n"
                 )
         except Exception as e:
-            logger.warning(f"Dream connection hint failed: {e}")
+            logger.warning(f"Introspection connection hint failed: {e}")
 
     # --- Feel crystallization hint: detect repeated feel themes ---
     crystal_hint = ""
@@ -2363,9 +2392,16 @@ async def dream() -> str:
                             )
                             break
         except Exception as e:
-            logger.warning(f"Dream crystallization hint failed: {e}")
+            logger.warning(f"Introspection crystallization hint failed: {e}")
 
     return header + "\n---\n".join(parts) + connection_hint + crystal_hint
+
+
+@mcp.tool()
+async def dream() -> str:
+    """兼容旧客户端。旧 dream() 已改名为 introspection(); 夜梦由后台小模型自动生成。"""
+    result = await introspection()
+    return "dream() 已改名为 introspection()。夜梦由后台小模型自动生成，不需要主动调用工具。\n\n" + result
 
 
 # =============================================================
@@ -2877,6 +2913,23 @@ async def api_persona_get(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@mcp.custom_route("/api/dreams", methods=["GET"])
+async def api_dreams(request):
+    """Return dream dashboard metadata only. Dream bodies are never exposed here."""
+    from starlette.responses import JSONResponse
+    err = _require_dashboard_auth(request)
+    if err:
+        return err
+    try:
+        limit = int(request.query_params.get("limit", "30"))
+    except Exception:
+        limit = 30
+    try:
+        return JSONResponse(dream_engine.dashboard_payload(limit=max(1, min(100, limit))))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @mcp.custom_route("/api/config", methods=["GET"])
 async def api_config_get(request):
     """Get current runtime config (safe fields only, API key masked)."""
@@ -2890,6 +2943,7 @@ async def api_config_get(request):
 
     dehy = config.get("dehydration", {})
     emb = config.get("embedding", {})
+    dream_cfg = config.get("dream", {}) if isinstance(config.get("dream", {}), dict) else {}
     return JSONResponse({
         "dehydration": {
             "model": dehy.get("model", ""),
@@ -2906,6 +2960,22 @@ async def api_config_get(request):
             "effective_base_url": embedding_engine.base_url,
             "has_own_api_key": bool(emb.get("api_key", "")),
         },
+        "dream": {
+            "enabled": dream_cfg.get("enabled", True),
+            "auto_enabled": dream_cfg.get("auto_enabled", True),
+            "surface_enabled": dream_cfg.get("surface_enabled", True),
+            "model": dream_cfg.get("model", ""),
+            "base_url": dream_cfg.get("base_url", ""),
+            "api_key_masked": _mask_key(dream_cfg.get("api_key", "")),
+            "api_ready": bool(dream_engine.api_key),
+            "temperature": dream_cfg.get("temperature", 0.85),
+            "max_tokens": dream_cfg.get("max_tokens", 900),
+            "daily_hour": dream_cfg.get("daily_hour", 3),
+            "run_window_hours": dream_cfg.get("run_window_hours", 3),
+            "min_material_count": dream_cfg.get("min_material_count", 5),
+            "material_window_hours": dream_cfg.get("material_window_hours", 48),
+            "identity_anchor_id": dream_cfg.get("identity_anchor_id", ""),
+        },
         "merge_threshold": config.get("merge_threshold", 75),
         "transport": config.get("transport", "stdio"),
         "buckets_dir": config.get("buckets_dir", ""),
@@ -2917,6 +2987,7 @@ async def api_config_update(request):
     """Hot-update runtime config. Optionally persist to config.yaml."""
     from starlette.responses import JSONResponse
     import yaml
+    global dream_engine
     err = _require_dashboard_auth(request)
     if err:
         return err
@@ -2990,15 +3061,44 @@ async def api_config_update(request):
         config["merge_threshold"] = int(body["merge_threshold"])
         updated.append("merge_threshold")
 
+    # --- Dream config ---
+    if "dream" in body:
+        d = body["dream"]
+        dream_cfg = config.setdefault("dream", {})
+        for key in (
+            "enabled",
+            "auto_enabled",
+            "surface_enabled",
+            "model",
+            "base_url",
+            "temperature",
+            "max_tokens",
+            "daily_hour",
+            "run_window_hours",
+            "min_material_count",
+            "material_window_hours",
+            "identity_anchor_id",
+        ):
+            if key in d:
+                dream_cfg[key] = d[key]
+                updated.append(f"dream.{key}")
+        if "api_key" in d and d["api_key"]:
+            dream_cfg["api_key"] = d["api_key"]
+            updated.append("dream.api_key")
+        dream_engine = DreamEngine(config)
+
     # --- Persist to config.yaml if requested ---
     if body.get("persist", False):
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
-        try:
-            save_config = {}
-            if os.path.exists(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    save_config = yaml.safe_load(f) or {}
+        config_path = os.environ.get(
+            "OMBRE_CONFIG_PATH",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml"),
+        )
+        runtime_config_path = config.get("_runtime_config_path") or os.environ.get("OMBRE_RUNTIME_CONFIG_PATH", "")
+        if not runtime_config_path:
+            runtime_config_path = os.path.join(config.get("state_dir") or os.path.dirname(config_path), "config.runtime.yaml")
 
+        def _apply_dashboard_config(save_config: dict) -> dict:
+            save_config = save_config or {}
             if "dehydration" in body:
                 sc_dehy = save_config.setdefault("dehydration", {})
                 for key in ("model", "base_url", "max_tokens", "temperature"):
@@ -3016,11 +3116,54 @@ async def api_config_update(request):
             if "merge_threshold" in body:
                 save_config["merge_threshold"] = int(body["merge_threshold"])
 
+            if "dream" in body:
+                sc_dream = save_config.setdefault("dream", {})
+                for key in (
+                    "enabled",
+                    "auto_enabled",
+                    "surface_enabled",
+                    "model",
+                    "base_url",
+                    "temperature",
+                    "max_tokens",
+                    "daily_hour",
+                    "run_window_hours",
+                    "min_material_count",
+                    "material_window_hours",
+                    "identity_anchor_id",
+                ):
+                    if key in body["dream"]:
+                        sc_dream[key] = body["dream"][key]
+                # Never persist api_key to yaml (use env var)
+            return save_config
+
+        try:
+            save_config = {}
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    save_config = yaml.safe_load(f) or {}
+            save_config = _apply_dashboard_config(save_config)
+
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(save_config, f, default_flow_style=False, allow_unicode=True)
             updated.append("persisted_to_yaml")
         except Exception as e:
-            return JSONResponse({"error": f"persist failed: {e}", "updated": updated}, status_code=500)
+            try:
+                runtime_config = {}
+                if os.path.exists(runtime_config_path):
+                    with open(runtime_config_path, "r", encoding="utf-8") as f:
+                        runtime_config = yaml.safe_load(f) or {}
+                runtime_config = _apply_dashboard_config(runtime_config)
+                os.makedirs(os.path.dirname(runtime_config_path), exist_ok=True)
+                with open(runtime_config_path, "w", encoding="utf-8") as f:
+                    yaml.dump(runtime_config, f, default_flow_style=False, allow_unicode=True)
+                updated.append("persisted_to_runtime_yaml")
+                updated.append(f"config_yaml_unwritable:{type(e).__name__}")
+            except Exception as fallback_e:
+                return JSONResponse(
+                    {"error": f"persist failed: {e}; runtime persist failed: {fallback_e}", "updated": updated},
+                    status_code=500,
+                )
 
     return JSONResponse({"updated": updated, "ok": True})
 
@@ -3286,6 +3429,31 @@ if __name__ == "__main__":
             rt = threading.Thread(target=_start_reflection_scheduler, daemon=True)
             rt.start()
             logger.info("Reflection scheduler enabled / 反思定时器已启用")
+
+        async def _dream_loop():
+            await asyncio.sleep(30)
+            local_bucket_mgr = BucketManager(config)
+            local_embedding_engine = EmbeddingEngine(config)
+            while True:
+                local_dream_engine = DreamEngine(config)
+                try:
+                    result = await local_dream_engine.run_due(
+                        local_bucket_mgr,
+                        local_embedding_engine,
+                    )
+                    if result and result.get("status") == "created":
+                        logger.info("Dream run-due result / 夜梦定时结果: %s", result)
+                except Exception as e:
+                    logger.warning("Dream scheduler failed / 夜梦定时器失败: %s", e)
+                await asyncio.sleep(local_dream_engine.check_interval_minutes * 60)
+
+        def _start_dream_scheduler():
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_dream_loop())
+
+        dt = threading.Thread(target=_start_dream_scheduler, daemon=True)
+        dt.start()
+        logger.info("Dream scheduler loop started / 夜梦定时器循环已启动")
 
         # --- Add CORS middleware so remote clients (Cloudflare Tunnel / ngrok) can connect ---
         # --- 添加 CORS 中间件，让远程客户端（Cloudflare Tunnel / ngrok）能正常连接 ---

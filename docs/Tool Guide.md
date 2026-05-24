@@ -10,9 +10,10 @@
 
 可用工具：
 
-1. breath(query="", max_results=20, domain="", include_related=true)
+1. breath(query="", max_results=20, domain="", include_related=true, is_session_start=false)
    用于读取/召回记忆。空 query 是自然浮现；有 query 是检索。
    domain="feel" 读取关系天气/感受；domain="whisper" 读取无源悄悄话。
+   新会话开头传 is_session_start=true；如果夜梦与语境共振，返回中会出现「===== 梦境 =====」块。
 
 2. read_bucket(bucket_id)
    精确读取完整 bucket。修改正文或追加年轮前必须先读。
@@ -36,8 +37,9 @@
 8. pulse(include_archive=false)
    查看系统状态和 bucket 列表。
 
-9. dream()
-   读取最近记忆供自省，不要把 dream 输出原样写回。
+9. introspection()
+   读取最近记忆供清醒自省，不要把 introspection 输出原样写回。
+   旧 dream() 仍可调用，但只是兼容壳；夜梦由后台生成，不主动调用。
 
 10. reflect(period="daily", force=false)
     生成日关系天气。weekly 默认关闭，除非用户明确要求。
