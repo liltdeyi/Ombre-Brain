@@ -559,7 +559,7 @@ choose_deploy_target() {
   printf '选择部署环境\n'
   printf '1. VPS 部署（Docker，适合服务器/云主机）\n'
   printf '2. Windows 部署（Docker Desktop + Git Bash）\n'
-  printf '3. 手机部署（Termux / Python 直跑）\n'
+  printf '3. Python 直跑（手机 / Linux / Windows 无 Docker）\n'
   read -r -p '输入（1-3）：' choice
   case "${choice}" in
     2)
@@ -569,8 +569,8 @@ choose_deploy_target() {
       DEFAULT_GATEWAY_PORT="18002"
       ;;
     3)
-      DEPLOY_TARGET="mobile"
-      DEPLOY_LABEL="手机部署"
+      DEPLOY_TARGET="python"
+      DEPLOY_LABEL="Python 直跑"
       DEFAULT_BRAIN_PORT="8000"
       DEFAULT_GATEWAY_PORT="8010"
       ;;
@@ -593,12 +593,23 @@ detect_python_cmd() {
   fi
 }
 
-ensure_mobile_tools() {
+ensure_python_tools() {
   if ! detect_python_cmd >/dev/null 2>&1; then
-    printf '未找到 python。手机部署建议先在 Termux 里执行：pkg install python git\n'
+    printf '未找到 python。Termux 可执行：pkg install python git；Windows 请先安装 Python 并加入 PATH。\n'
     return 1
   fi
   return 0
+}
+
+load_python_direct_env() {
+  if [[ -f ".env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ".env"
+    set +a
+  fi
+  export OMBRE_BUCKETS_DIR="${PWD}/buckets"
+  export OMBRE_STATE_DIR="${PWD}/state"
 }
 
 select_deploy_target_for_task() {
@@ -620,11 +631,11 @@ choose_client_host() {
         CLIENT_HOST="$(prompt_text 'Windows 电脑的局域网 IP（手机同 Wi-Fi 时使用）' '<Windows局域网IP>')"
       fi
       ;;
-    mobile)
-      if prompt_yes_no '客户端就在这台手机上吗' 'y'; then
+    python)
+      if prompt_yes_no '客户端就在这台机器/手机上吗' 'y'; then
         CLIENT_HOST="127.0.0.1"
       else
-        CLIENT_HOST="$(prompt_text '手机的局域网 IP（其它设备同 Wi-Fi 时使用）' '<手机局域网IP>')"
+        CLIENT_HOST="$(prompt_text '这台机器/手机的局域网 IP（其它设备同网段时使用）' '<局域网IP>')"
       fi
       ;;
   esac
@@ -665,8 +676,8 @@ print_client_guide() {
         printf '\nWindows 提醒：同一台电脑填 127.0.0.1；手机连 Windows 时填 Windows 局域网 IP，并确认防火墙允许端口 %s。\n' "${brain_port}"
       fi
       ;;
-    mobile)
-      printf '\n手机提醒：同一台手机填 127.0.0.1；其它设备连手机时填手机局域网 IP，并保持 Termux 后台运行。\n'
+    python)
+      printf '\nPython 直跑提醒：同一台机器填 127.0.0.1；其它设备连接时填局域网 IP，并保持启动脚本后台运行。\n'
       ;;
   esac
 
@@ -696,7 +707,7 @@ EOF
   printf '\n已写入 connection_guide.txt\n'
 }
 
-start_mobile_runtime() {
+start_python_runtime() {
   local python_cmd
   python_cmd="$(detect_python_cmd)" || return 1
 
@@ -705,7 +716,7 @@ start_mobile_runtime() {
   fi
 
   mkdir -p logs state buckets
-  cat > start_mobile.sh <<'EOF'
+  cat > start_local.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 PYTHON_CMD="${PYTHON_CMD:-python3}"
@@ -721,35 +732,96 @@ export OMBRE_BUCKETS_DIR="${PWD}/buckets"
 export OMBRE_STATE_DIR="${PWD}/state"
 EOF
   if [[ "${FEATURE_SCOPE}" == "full" ]]; then
-    cat >> start_mobile.sh <<'EOF'
+    cat >> start_local.sh <<'EOF'
 export OMBRE_GATEWAY_ADMIN_URL="http://127.0.0.1:8010/api/config"
 EOF
   fi
-  cat >> start_mobile.sh <<'EOF'
+  cat >> start_local.sh <<'EOF'
 nohup "${PYTHON_CMD}" server.py > logs/ombre-brain.log 2>&1 &
 echo $! > state/ombre-brain.pid
 echo "Ombre-Brain started: http://127.0.0.1:8000/health"
 EOF
   if [[ "${FEATURE_SCOPE}" == "full" ]]; then
-    cat >> start_mobile.sh <<'EOF'
+    cat >> start_local.sh <<'EOF'
 nohup "${PYTHON_CMD}" gateway.py > logs/ombre-gateway.log 2>&1 &
 echo $! > state/ombre-gateway.pid
 echo "Ombre-Gateway started: http://127.0.0.1:8010/health"
 EOF
   fi
+  chmod +x start_local.sh
+  cat > start_mobile.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${SCRIPT_DIR}/start_local.sh" "$@"
+EOF
   chmod +x start_mobile.sh
 
-  if prompt_yes_no '现在后台启动手机服务吗' 'y'; then
-    PYTHON_CMD="${python_cmd}" ./start_mobile.sh
+  cat > start_local.ps1 <<'EOF'
+$ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $Root
+
+$PythonCmd = $env:PYTHON_CMD
+if ([string]::IsNullOrWhiteSpace($PythonCmd)) {
+  $PythonCmd = "python"
+}
+
+New-Item -ItemType Directory -Force -Path logs,state,buckets | Out-Null
+
+if (Test-Path ".env") {
+  Get-Content ".env" | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -eq "" -or $line.StartsWith("#")) { return }
+    if ($line.StartsWith("export ")) { $line = $line.Substring(7).Trim() }
+    $idx = $line.IndexOf("=")
+    if ($idx -le 0) { return }
+    $name = $line.Substring(0, $idx).Trim()
+    $value = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
+    [Environment]::SetEnvironmentVariable($name, $value, "Process")
+  }
+}
+
+$env:OMBRE_TRANSPORT = "streamable-http"
+$env:OMBRE_BUCKETS_DIR = Join-Path $Root "buckets"
+$env:OMBRE_STATE_DIR = Join-Path $Root "state"
+EOF
+  if [[ "${FEATURE_SCOPE}" == "full" ]]; then
+    cat >> start_local.ps1 <<'EOF'
+$env:OMBRE_GATEWAY_ADMIN_URL = "http://127.0.0.1:8010/api/config"
+EOF
+  fi
+  cat >> start_local.ps1 <<'EOF'
+
+$brainOut = Join-Path $Root "logs/ombre-brain.log"
+$brainErr = Join-Path $Root "logs/ombre-brain.err.log"
+$brain = Start-Process -FilePath $PythonCmd -ArgumentList "server.py" -RedirectStandardOutput $brainOut -RedirectStandardError $brainErr -PassThru -WindowStyle Hidden
+Set-Content -Path (Join-Path $Root "state/ombre-brain.pid") -Value $brain.Id
+Write-Host "Ombre-Brain started: http://127.0.0.1:8000/health"
+EOF
+  if [[ "${FEATURE_SCOPE}" == "full" ]]; then
+    cat >> start_local.ps1 <<'EOF'
+$gatewayOut = Join-Path $Root "logs/ombre-gateway.log"
+$gatewayErr = Join-Path $Root "logs/ombre-gateway.err.log"
+$gateway = Start-Process -FilePath $PythonCmd -ArgumentList "gateway.py" -RedirectStandardOutput $gatewayOut -RedirectStandardError $gatewayErr -PassThru -WindowStyle Hidden
+Set-Content -Path (Join-Path $Root "state/ombre-gateway.pid") -Value $gateway.Id
+Write-Host "Ombre-Gateway started: http://127.0.0.1:8010/health"
+EOF
+  fi
+
+  if prompt_yes_no '现在后台启动 Python 直跑服务吗' 'y'; then
+    PYTHON_CMD="${python_cmd}" ./start_local.sh
   else
-    printf '已生成 start_mobile.sh；之后可执行：./start_mobile.sh\n'
+    printf '已生成 start_local.sh / start_local.ps1。\n'
+    printf 'Linux/Termux/Git Bash 执行：./start_local.sh\n'
+    printf 'Windows PowerShell 执行：powershell -ExecutionPolicy Bypass -File .\\start_local.ps1\n'
   fi
 }
 
-update_mobile_runtime() {
+update_python_runtime() {
   local python_cmd
   python_cmd="$(detect_python_cmd)" || {
-    printf '未找到 python。手机部署建议先在 Termux 里执行：pkg install python git\n'
+    printf '未找到 python。Termux 可执行：pkg install python git；Windows 请先安装 Python 并加入 PATH。\n'
     return 1
   }
 
@@ -762,24 +834,24 @@ update_mobile_runtime() {
     "${python_cmd}" -m pip install -r requirements.txt || return 1
   fi
 
-  printf '\n手机直跑更新完成。\n'
-  if [[ -f "start_mobile.sh" ]]; then
-    printf '如果服务已经在跑，请重启 Termux 后台服务，或手动结束旧进程后执行：./start_mobile.sh\n'
+  printf '\nPython 直跑更新完成。\n'
+  if [[ -f "start_local.sh" || -f "start_local.ps1" ]]; then
+    printf '如果服务已经在跑，请手动结束旧进程后重新执行 start_local.sh 或 start_local.ps1。\n'
   else
-    printf '未找到 start_mobile.sh；如尚未首次部署，请先走菜单 1。\n'
+    printf '未找到 start_local 启动脚本；如尚未首次部署，请先走菜单 1。\n'
   fi
 }
 
-doctor_mobile_runtime() {
+doctor_python_runtime() {
   local python_cmd
   local gateway_expected="false"
   line
-  printf '手机部署错误排查\n'
+  printf 'Python 直跑错误排查\n'
 
   if python_cmd="$(detect_python_cmd)"; then
     printf 'OK   Python 可用：%s\n' "${python_cmd}"
   else
-    printf 'FAIL 未找到 python。Termux 可执行：pkg install python git\n'
+    printf 'FAIL 未找到 python。Termux 可执行：pkg install python git；Windows 请先安装 Python 并加入 PATH。\n'
   fi
 
   if [[ -f ".env" ]]; then
@@ -794,7 +866,7 @@ doctor_mobile_runtime() {
     printf 'WARN config.yaml 不存在；请先走首次部署。\n'
   fi
 
-  if [[ -f "start_mobile.sh" ]] && grep -q "gateway.py" "start_mobile.sh"; then
+  if { [[ -f "start_local.sh" ]] && grep -q "gateway.py" "start_local.sh"; } || { [[ -f "start_local.ps1" ]] && grep -q "gateway.py" "start_local.ps1"; }; then
     gateway_expected="true"
   fi
 
@@ -802,7 +874,7 @@ doctor_mobile_runtime() {
   if [[ "${gateway_expected}" == "true" ]]; then
     keys+=(OMBRE_GATEWAY_TOKEN)
   else
-    printf 'INFO 当前 start_mobile.sh 未启用 Gateway，跳过 Gateway token 检查。\n'
+    printf 'INFO 当前启动脚本未启用 Gateway，跳过 Gateway token 检查。\n'
   fi
 
   for key in "${keys[@]}"; do
@@ -822,7 +894,7 @@ doctor_mobile_runtime() {
       printf 'WARN ombre-brain pid 文件存在，但进程可能没在跑。\n'
     fi
   else
-    printf 'WARN 未找到 state/ombre-brain.pid；可能还没启动 start_mobile.sh。\n'
+    printf 'WARN 未找到 state/ombre-brain.pid；可能还没启动 start_local。\n'
   fi
 
   if [[ "${gateway_expected}" == "true" ]]; then
@@ -835,10 +907,10 @@ doctor_mobile_runtime() {
         printf 'WARN ombre-gateway pid 文件存在，但进程可能没在跑。\n'
       fi
     else
-      printf 'WARN 未找到 state/ombre-gateway.pid；可能还没启动 start_mobile.sh。\n'
+      printf 'WARN 未找到 state/ombre-gateway.pid；可能还没启动 start_local。\n'
     fi
   else
-    printf 'INFO 当前手机部署未启用 Gateway，跳过 Gateway 进程检查。\n'
+    printf 'INFO 当前 Python 直跑未启用 Gateway，跳过 Gateway 进程检查。\n'
   fi
 
   if command -v curl >/dev/null 2>&1; then
@@ -873,7 +945,7 @@ doctor_mobile_runtime() {
     fi
   done
 
-  printf '\n手机客户端常用填写：\n'
+  printf '\nPython 直跑客户端常用填写：\n'
   if [[ "${gateway_expected}" == "true" ]]; then
     printf '  Gateway Base URL: http://127.0.0.1:8010/v1\n'
   else
@@ -918,15 +990,15 @@ first_deploy() {
   choose_feature_scope
   line
   printf '当前选择：%s / %s\n' "${DEPLOY_LABEL}" "${FEATURE_LABEL}"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    printf '首次部署会生成 .env、config.yaml 和 start_mobile.sh。\n'
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    printf '首次部署会生成 .env、config.yaml、start_local.sh 和 start_local.ps1。\n'
   else
     printf '首次部署会生成 .env、config.yaml、%s，并启动容器。\n' "${LOCAL_COMPOSE_FILE}"
   fi
   printf '已有同名文件会先备份。\n'
   line
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    ensure_mobile_tools || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    ensure_python_tools || return 1
   else
     ensure_tools || return 1
   fi
@@ -991,13 +1063,13 @@ first_deploy() {
   reflection_key="$(prompt_secret 'Reflection key（可回车，默认复用 OMBRE_API_KEY/Persona）' false)"
 
   local brain_port gateway_port
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
     brain_port="${DEFAULT_BRAIN_PORT}"
     gateway_port="${DEFAULT_GATEWAY_PORT}"
     if [[ "${FEATURE_SCOPE}" == "full" ]]; then
-      printf '手机直跑使用固定端口：Ombre-Brain=%s，Gateway=%s。\n' "${brain_port}" "${gateway_port}"
+      printf 'Python 直跑使用固定端口：Ombre-Brain=%s，Gateway=%s。\n' "${brain_port}" "${gateway_port}"
     else
-      printf '手机直跑使用固定端口：Ombre-Brain=%s；Gateway 不启动。\n' "${brain_port}"
+      printf 'Python 直跑使用固定端口：Ombre-Brain=%s；Gateway 不启动。\n' "${brain_port}"
     fi
   else
     brain_port="$(prompt_text 'Ombre-Brain 对外端口' "${DEFAULT_BRAIN_PORT}")"
@@ -1020,8 +1092,8 @@ first_deploy() {
 
   mkdir -p buckets state
 
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    start_mobile_runtime || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    start_python_runtime || return 1
   else
     write_compose_file "${brain_port}" "${gateway_port}"
     export COMPOSE_FILE="${LOCAL_COMPOSE_FILE}"
@@ -1048,8 +1120,8 @@ choose_compose_file() {
 
 update_version() {
   select_deploy_target_for_task "更新版本"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    update_mobile_runtime
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    update_python_runtime
   else
     choose_compose_file
     "${SCRIPT_DIR}/update_deploy.sh"
@@ -1058,8 +1130,8 @@ update_version() {
 
 run_doctor() {
   select_deploy_target_for_task "错误排查"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    doctor_mobile_runtime
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    doctor_python_runtime
   else
     choose_compose_file
     "${SCRIPT_DIR}/doctor.sh"
@@ -1069,15 +1141,15 @@ run_doctor() {
 migration_prepare_target() {
   local title="$1"
   select_deploy_target_for_task "${title}"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    ensure_mobile_tools || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    ensure_python_tools || return 1
   else
     choose_compose_file
   fi
 }
 
 migration_state_dir() {
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
     printf 'state\n'
   else
     printf '/state\n'
@@ -1094,8 +1166,8 @@ migration_review_path() {
 
 run_target_shell() {
   local script="$1"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
-    bash -lc "${script}"
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    bash -lc "set -euo pipefail; if [[ -f .env ]]; then set -a; source .env; set +a; fi; export OMBRE_BUCKETS_DIR=\"\${PWD}/buckets\"; export OMBRE_STATE_DIR=\"\${PWD}/state\"; ${script}"
   else
     local service="${OMBRE_SERVICE:-ombre-brain}"
     ombre_compose -f "${COMPOSE_FILE}" exec -T "${service}" sh -lc "${script}"
@@ -1103,9 +1175,10 @@ run_target_shell() {
 }
 
 run_target_python_stdin() {
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
     local python_cmd
     python_cmd="$(detect_python_cmd)" || return 1
+    load_python_direct_env
     "${python_cmd}" -
   else
     local service="${OMBRE_SERVICE:-ombre-brain}"
@@ -1168,7 +1241,7 @@ migration_backup() {
   migration_prepare_target "原版迁移备份" || return 1
   local stamp archive
   stamp="$(date +%Y%m%d_%H%M%S)"
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
     archive="state/backups/ombre_migration_${stamp}.tar.gz"
     local tmp_archive items=()
     tmp_archive="/tmp/ombre_migration_${stamp}.tar.gz"
@@ -1260,10 +1333,11 @@ migration_apply_feels() {
 
 migration_rebuild_embeddings() {
   migration_prepare_target "迁移后重建向量库" || return 1
-  if [[ "${DEPLOY_TARGET}" == "mobile" ]]; then
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
     local python_cmd batch_size
     python_cmd="$(detect_python_cmd)" || return 1
     batch_size="$(prompt_text '每批处理数量' "${BATCH_SIZE:-20}")"
+    load_python_direct_env
     "${python_cmd}" backfill_embeddings.py --refresh-all --batch-size "${batch_size}"
   else
     "${SCRIPT_DIR}/embedding_rebuild.sh"
@@ -1329,6 +1403,57 @@ migration_menu() {
   done
 }
 
+vector_prepare_target() {
+  local title="$1"
+  select_deploy_target_for_task "${title}"
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    ensure_python_tools || return 1
+    load_python_direct_env
+  else
+    choose_compose_file
+  fi
+}
+
+vector_backfill_embeddings() {
+  vector_prepare_target "补缺失向量" || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    local python_cmd batch_size
+    python_cmd="$(detect_python_cmd)" || return 1
+    batch_size="$(prompt_text '每批处理数量' "${BATCH_SIZE:-20}")"
+    "${python_cmd}" backfill_embeddings.py --batch-size "${batch_size}"
+  else
+    "${SCRIPT_DIR}/embedding_backfill.sh"
+  fi
+}
+
+vector_rebuild_embeddings() {
+  vector_prepare_target "重建整个向量库" || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    local python_cmd batch_size
+    python_cmd="$(detect_python_cmd)" || return 1
+    batch_size="$(prompt_text '每批处理数量' "${BATCH_SIZE:-20}")"
+    printf '这会刷新所有 bucket 的 embedding，可能消耗较多 API 次数。\n'
+    if ! prompt_yes_no '继续吗' 'n'; then
+      printf '已取消。\n'
+      return 0
+    fi
+    "${python_cmd}" backfill_embeddings.py --refresh-all --batch-size "${batch_size}"
+  else
+    "${SCRIPT_DIR}/embedding_rebuild.sh"
+  fi
+}
+
+vector_cleanup_orphans() {
+  vector_prepare_target "检查并删除孤儿向量" || return 1
+  if [[ "${DEPLOY_TARGET}" == "python" ]]; then
+    local python_cmd
+    python_cmd="$(detect_python_cmd)" || return 1
+    "${python_cmd}" scripts/cleanup_orphan_embeddings.py --delete
+  else
+    "${SCRIPT_DIR}/embedding_cleanup_orphans.sh"
+  fi
+}
+
 vector_menu() {
   local choice
   while true; do
@@ -1343,9 +1468,9 @@ vector_menu() {
       return 0
     fi
     case "${choice}" in
-      1) choose_compose_file; "${SCRIPT_DIR}/embedding_backfill.sh"; pause ;;
-      2) choose_compose_file; "${SCRIPT_DIR}/embedding_rebuild.sh"; pause ;;
-      3) choose_compose_file; "${SCRIPT_DIR}/embedding_cleanup_orphans.sh"; pause ;;
+      1) vector_backfill_embeddings; pause ;;
+      2) vector_rebuild_embeddings; pause ;;
+      3) vector_cleanup_orphans; pause ;;
       0) return 0 ;;
       *) printf '请输入 0-3。\n' ;;
     esac
