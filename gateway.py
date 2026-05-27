@@ -2157,6 +2157,8 @@ class GatewayService:
             moment for moment in candidates
             if str(moment.get("bucket_id") or "") not in recent_ids
         ] or candidates
+        if body_chain_query:
+            active_candidates.sort(key=self._body_chain_rank)
         for moment in active_candidates:
             bucket_id = str(moment.get("bucket_id") or "")
             if not bucket_id or bucket_id in seen_buckets:
