@@ -19,6 +19,7 @@ DEFAULT_RELATION_TYPE_WEIGHTS = {
 }
 
 NodeSalienceFn = Callable[[str, dict], float]
+NodeResonanceFn = Callable[[str, dict], float]
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,7 @@ def diffuse_memory(
     options: DiffusionOptions | None = None,
     exclude_ids: set[str] | None = None,
     node_salience: NodeSalienceFn | None = None,
+    node_resonance: NodeResonanceFn | None = None,
 ) -> list[DiffusionHit]:
     options = options or DiffusionOptions()
     if not options.enabled or options.top_k <= 0 or options.max_hops <= 0:
@@ -165,6 +167,7 @@ def diffuse_memory(
                     next_strength
                     * hop_weight
                     * _resolved_node_salience(target_id, target, node_salience)
+                    * _resolved_node_resonance(target_id, target, node_resonance)
                 )
                 if activation < options.min_activation:
                     continue
@@ -327,6 +330,19 @@ def _resolved_node_salience(
         except Exception:
             pass
     return _node_salience(bucket)
+
+
+def _resolved_node_resonance(
+    bucket_id: str,
+    bucket: dict,
+    node_resonance: NodeResonanceFn | None,
+) -> float:
+    if node_resonance:
+        try:
+            return _clamp(node_resonance(bucket_id, bucket), 0.5, 1.5)
+        except Exception:
+            pass
+    return 1.0
 
 
 def _bucket_label(bucket_id: str, bucket_map: dict[str, dict]) -> str:

@@ -104,3 +104,41 @@ def test_missing_metadata_does_not_crash(test_config):
     assert node["arousal"] == 0.3
     assert 0.2 <= node["salience"] <= 1.3
     assert isinstance(json.loads(node["facets_json"]), dict)
+
+
+def test_query_facets_and_resonance_prefer_matching_dimensions(test_config):
+    store = MemoryNodeStore(test_config)
+    query_facets = store.facets_for_text("地铁 深夜 不想睡 依赖 哥哥")
+    night_node = store.upsert_bucket(
+        {
+            "id": "night",
+            "content": "深夜不想睡时，依赖感会更明显。",
+            "metadata": {
+                "name": "深夜依赖",
+                "tags": ["依赖", "深夜"],
+                "domain": ["恋爱"],
+                "importance": 7,
+            },
+        }
+    )
+    project_node = store.upsert_bucket(
+        {
+            "id": "project",
+            "content": "Gateway 部署和 API 测试记录。",
+            "metadata": {
+                "name": "部署测试",
+                "tags": ["gateway", "api"],
+                "domain": ["编程"],
+                "importance": 7,
+            },
+        }
+    )
+
+    assert query_facets["scene"]["commute"] > 0
+    assert query_facets["scene"]["night"] > 0
+    assert query_facets["affect"]["attachment"] > 0
+    assert store.facet_resonance(query_facets, night_node["facets"]) > 1.0
+    assert store.facet_resonance(query_facets, night_node["facets"]) > store.facet_resonance(
+        query_facets,
+        project_node["facets"],
+    )

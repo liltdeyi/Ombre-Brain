@@ -89,6 +89,27 @@ def test_diffusion_uses_external_node_salience():
     assert hits[0].bucket_id == "C"
 
 
+def test_diffusion_uses_external_node_resonance():
+    bucket_map = {bucket_id: _bucket(bucket_id) for bucket_id in ["A", "B", "C"]}
+    edges = [
+        {"source": "A", "target": "B", "relation_type": "triggers", "confidence": 1.0},
+        {"source": "A", "target": "C", "relation_type": "triggers", "confidence": 1.0},
+    ]
+
+    hits = diffuse_memory(
+        {"A": 1.0},
+        edges,
+        bucket_map,
+        options=DiffusionOptions(max_hops=1, top_k=10, min_activation=0.0),
+        node_resonance=lambda bucket_id, _bucket: 0.75 if bucket_id == "B" else 1.25,
+    )
+
+    activations = {hit.bucket_id: hit.activation for hit in hits}
+    assert activations["B"] == pytest.approx(0.6)
+    assert activations["C"] == pytest.approx(1.0)
+    assert hits[0].bucket_id == "C"
+
+
 def test_diffusion_skips_seed_and_feel_targets():
     bucket_map = {
         "A": _bucket("A"),

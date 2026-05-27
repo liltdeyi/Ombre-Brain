@@ -491,7 +491,11 @@ class GatewayService:
                 or self._should_inject_interval(session_id, self.favorite_memory_interval_rounds)
             ):
                 favorite_memory, favorite_ids = await self._build_favorite_memory_block(all_buckets, session_id)
-            related_memory = await self._build_diffused_memory_block(recalled_buckets, all_buckets)
+            related_memory = await self._build_diffused_memory_block(
+                recalled_buckets,
+                all_buckets,
+                current_user_query,
+            )
             injected_ids = list(
                 dict.fromkeys([bucket["id"] for bucket in recalled_buckets] + favorite_ids)
             )
@@ -1963,6 +1967,7 @@ class GatewayService:
         self,
         recalled_buckets: list[dict],
         all_buckets: list[dict],
+        query_text: str = "",
     ) -> str:
         if (
             self.related_memory_budget <= 0
@@ -1975,10 +1980,13 @@ class GatewayService:
         bucket_map = {bucket["id"]: bucket for bucket in all_buckets}
         recalled_set = set(recalled_ids)
         node_salience = None
+        node_resonance = None
         if self._node_facets_enabled():
             try:
                 self.memory_node_store.bulk_upsert(list(bucket_map.values()))
+                query_facets = self.memory_node_store.facets_for_text(query_text)
                 node_salience = self.memory_node_store.node_salience
+                node_resonance = self._node_resonance_lookup(query_facets)
             except Exception as exc:
                 logger.warning("Gateway memory node refresh failed: %s", exc)
 
@@ -1994,6 +2002,7 @@ class GatewayService:
             options=self.diffusion_options,
             exclude_ids=recalled_set,
             node_salience=node_salience,
+            node_resonance=node_resonance,
         )
         if not hits:
             return ""
@@ -2032,6 +2041,29 @@ class GatewayService:
         if isinstance(value, str):
             return value.strip().lower() not in {"0", "false", "no", "off"}
         return bool(value)
+
+    def _node_resonance_lookup(self, query_facets: dict):
+        if not self._has_active_facets(query_facets):
+            return None
+
+        def lookup(bucket_id: str, bucket: dict) -> float:
+            return self.memory_node_store.node_resonance(bucket_id, query_facets, bucket)
+
+        return lookup
+
+    @staticmethod
+    def _has_active_facets(facets: dict | None) -> bool:
+        for value in (facets or {}).values():
+            if isinstance(value, dict):
+                if any(float(item or 0) > 0 for item in value.values()):
+                    return True
+            else:
+                try:
+                    if float(value) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+        return False
 
     async def _build_related_memory_block(
         self,

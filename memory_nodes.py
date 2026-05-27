@@ -22,6 +22,7 @@ FACET_KEYWORDS = {
         "\u5360\u6709",
         "\u7275\u6302",
         "\u951a\u70b9",
+        "\u54e5\u54e5",
     ),
     "affect.vulnerability": (
         "vulnerability",
@@ -38,6 +39,9 @@ FACET_KEYWORDS = {
         "\u59d4\u5c48",
         "\u8106\u5f31",
         "\u5b89\u6170",
+        "\u5931\u843d",
+        "\u751f\u6c14",
+        "\u654f\u611f",
     ),
     "relation.intimacy": (
         "intimacy",
@@ -68,6 +72,8 @@ FACET_KEYWORDS = {
         "\u8bb0\u5f97",
         "\u8981\u505a",
         "\u8ba1\u5212",
+        "\u6c38\u8fdc",
+        "\u957f\u957f\u4e45\u4e45",
     ),
     "topic.memory_system": (
         "memory",
@@ -113,6 +119,38 @@ FACET_KEYWORDS = {
         "\u60f3\u4f60",
         "\u559c\u6b22",
         "\u7231",
+    ),
+    "scene.commute": (
+        "commute",
+        "subway",
+        "metro",
+        "train",
+        "station",
+        "\u901a\u52e4",
+        "\u5730\u94c1",
+        "\u56de\u5bb6",
+        "\u8f66\u7ad9",
+    ),
+    "scene.night": (
+        "night",
+        "late night",
+        "sleep",
+        "insomnia",
+        "awake",
+        "\u6df1\u591c",
+        "\u591c\u91cc",
+        "\u665a\u4e0a",
+        "\u7761\u4e0d\u7740",
+        "\u4e0d\u60f3\u7761",
+        "\u5931\u7720",
+    ),
+    "scene.rain": (
+        "rain",
+        "blue",
+        "\u96e8",
+        "\u96e8\u5929",
+        "\u84dd\u8272",
+        "\u7a97\u53e3",
     ),
 }
 
@@ -196,6 +234,64 @@ class MemoryNodeStore:
             return float(node["salience"])
         if fallback_bucket:
             return float(self._node_from_bucket(fallback_bucket)["salience"])
+        return 1.0
+
+    def facets_for_text(self, text: str) -> dict[str, dict[str, float]]:
+        pseudo_bucket = {
+            "id": "__query__",
+            "content": str(text or ""),
+            "metadata": {
+                "name": str(text or ""),
+                "tags": [str(text or "")],
+                "domain": [],
+            },
+        }
+        return self._facets_for_bucket(pseudo_bucket, pseudo_bucket["metadata"])
+
+    def facet_resonance(
+        self,
+        query_facets: dict | None,
+        node_facets: dict | None,
+        *,
+        floor: float = 0.85,
+        ceiling: float = 1.25,
+    ) -> float:
+        query_flat = _flatten_facets(query_facets or {})
+        node_flat = _flatten_facets(node_facets or {})
+        active_query = {
+            key: value for key, value in query_flat.items() if value > 0
+        }
+        if not active_query or not node_flat:
+            return 1.0
+
+        query_weight = sum(active_query.values())
+        if query_weight <= 0:
+            return 1.0
+        overlap = sum(
+            query_value * max(0.0, node_flat.get(key, 0.0))
+            for key, query_value in active_query.items()
+        )
+        coverage = _clamp_float(overlap / query_weight, 0.0, 1.0)
+        return round(_clamp_float(floor + coverage * (ceiling - floor), floor, ceiling), 4)
+
+    def node_resonance(
+        self,
+        bucket_or_id: Any,
+        query_facets: dict | None,
+        fallback_bucket: dict | None = None,
+    ) -> float:
+        if not query_facets:
+            return 1.0
+        if isinstance(bucket_or_id, dict):
+            node_facets = self._node_from_bucket(bucket_or_id)["facets"]
+            return self.facet_resonance(query_facets, node_facets)
+
+        node = self.get(str(bucket_or_id or ""))
+        if node:
+            return self.facet_resonance(query_facets, node.get("facets"))
+        if fallback_bucket:
+            node_facets = self._node_from_bucket(fallback_bucket)["facets"]
+            return self.facet_resonance(query_facets, node_facets)
         return 1.0
 
     def _upsert_node(self, conn: sqlite3.Connection, node: dict) -> None:
@@ -356,6 +452,17 @@ def _nest_facets(flat_facets: dict[str, float]) -> dict[str, dict[str, float]]:
             continue
         nested.setdefault(group, {})[name] = value
     return nested
+
+
+def _flatten_facets(facets: dict[str, Any]) -> dict[str, float]:
+    flattened: dict[str, float] = {}
+    for key, value in (facets or {}).items():
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                flattened[f"{key}.{child_key}"] = _clamp_float(child_value, 0.0, 1.0)
+        else:
+            flattened[str(key)] = _clamp_float(value, 0.0, 1.0)
+    return flattened
 
 
 def _clamp_float(value: Any, low: float, high: float) -> float:

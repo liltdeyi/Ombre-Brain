@@ -1322,6 +1322,7 @@ async def _build_mcp_diffused_memory_block(
     token_budget: int,
     limit_per_source: int,
     min_confidence: float,
+    query_text: str = "",
 ) -> str:
     if token_budget <= 0 or not source_buckets:
         return ""
@@ -1345,10 +1346,13 @@ async def _build_mcp_diffused_memory_block(
 
     bucket_map = {bucket["id"]: bucket for bucket in all_buckets if bucket.get("id")}
     node_salience = None
+    node_resonance = None
     if _node_facets_enabled(config):
         try:
             memory_node_store.bulk_upsert(list(bucket_map.values()))
+            query_facets = memory_node_store.facets_for_text(query_text)
             node_salience = _node_salience_lookup
+            node_resonance = _node_resonance_lookup(query_facets)
         except Exception as e:
             logger.warning(f"Failed to refresh memory nodes / 记忆节点刷新失败: {e}")
 
@@ -1364,6 +1368,7 @@ async def _build_mcp_diffused_memory_block(
         options=diffusion_options_from_config(config),
         exclude_ids=source_set,
         node_salience=node_salience,
+        node_resonance=node_resonance,
     )
 
     parts = []
@@ -1418,6 +1423,30 @@ def _node_facets_enabled(cfg: dict | None) -> bool:
 
 def _node_salience_lookup(bucket_id: str, bucket: dict) -> float:
     return memory_node_store.node_salience(bucket_id, bucket)
+
+
+def _node_resonance_lookup(query_facets: dict):
+    if not _has_active_facets(query_facets):
+        return None
+
+    def lookup(bucket_id: str, bucket: dict) -> float:
+        return memory_node_store.node_resonance(bucket_id, query_facets, bucket)
+
+    return lookup
+
+
+def _has_active_facets(facets: dict | None) -> bool:
+    for value in (facets or {}).values():
+        if isinstance(value, dict):
+            if any(float(item or 0) > 0 for item in value.values()):
+                return True
+        else:
+            try:
+                if float(value) > 0:
+                    return True
+            except (TypeError, ValueError):
+                continue
+    return False
 
 
 # =============================================================
@@ -1637,6 +1666,7 @@ async def breath(
                 max(0, token_budget - related_header_tokens),
                 related_per_memory,
                 edge_min_confidence,
+                "",
             )
 
         parts = []
@@ -1746,6 +1776,7 @@ async def breath(
             max(0, related_budget),
             related_per_memory,
             edge_min_confidence,
+            query,
         )
         if related_block:
             related_entry = related_header + related_block
