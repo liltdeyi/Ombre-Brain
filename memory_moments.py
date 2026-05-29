@@ -11,6 +11,7 @@ from typing import Any
 from memory_relevance import (
     MemoryRelevanceOptions,
     expanded_terms_for_query,
+    facets_for_node,
     memory_relevance_options_from_config,
 )
 from utils import strip_wikilinks
@@ -66,6 +67,13 @@ SECTION_ALIASES = {
 
 HEADING_RE = re.compile(r"^(#{2,6})\s+(.+?)\s*$")
 
+DEFAULT_ANNOTATION_OPTIONS = {
+    "enabled": True,
+    "max_summary_chars": 160,
+    "max_evidence_spans": 3,
+    "max_evidence_chars": 120,
+}
+
 
 class MemoryMomentStore:
     """SQLite index of bucket body/comment moments."""
@@ -73,6 +81,7 @@ class MemoryMomentStore:
     def __init__(self, config: dict):
         config = config or {}
         self.relevance_options = memory_relevance_options_from_config(config)
+        self.annotation_options = _annotation_options_from_config(config)
         state_dir = config.get("state_dir") or os.path.join(
             os.path.dirname(os.path.abspath(config.get("buckets_dir", "buckets"))),
             "state",
@@ -132,7 +141,7 @@ class MemoryMomentStore:
         conn.close()
 
     def upsert_bucket(self, bucket: dict) -> list[dict]:
-        moments = parse_bucket_moments(bucket)
+        moments = parse_bucket_moments(bucket, self.relevance_options, self.annotation_options)
         bucket_id = _bucket_id(bucket)
         conn = self._connect()
         self._replace_bucket(conn, bucket_id, moments)
@@ -146,7 +155,7 @@ class MemoryMomentStore:
         indexed_moments = 0
         for bucket in buckets:
             bucket_id = _bucket_id(bucket)
-            moments = parse_bucket_moments(bucket)
+            moments = parse_bucket_moments(bucket, self.relevance_options, self.annotation_options)
             self._replace_bucket(conn, bucket_id, moments)
             indexed_buckets += 1
             indexed_moments += len(moments)
@@ -340,10 +349,29 @@ class MemoryMomentStore:
         return moment
 
 
-def parse_bucket_moments(bucket: dict) -> list[dict]:
+def _annotation_options_from_config(config: dict | None) -> dict:
+    raw = (config or {}).get("moment_annotations", {})
+    options = dict(DEFAULT_ANNOTATION_OPTIONS)
+    if isinstance(raw, dict):
+        options.update(raw)
+    return {
+        "enabled": _bool_value(options.get("enabled"), True),
+        "max_summary_chars": _int_between(options.get("max_summary_chars"), 160, 40, 500),
+        "max_evidence_spans": _int_between(options.get("max_evidence_spans"), 3, 0, 10),
+        "max_evidence_chars": _int_between(options.get("max_evidence_chars"), 120, 30, 500),
+    }
+
+
+def parse_bucket_moments(
+    bucket: dict,
+    relevance_options: MemoryRelevanceOptions | None = None,
+    annotation_options: dict | None = None,
+) -> list[dict]:
     if not isinstance(bucket, dict):
         raise ValueError("bucket must be a dict")
 
+    relevance_options = relevance_options or memory_relevance_options_from_config()
+    annotation_options = {**DEFAULT_ANNOTATION_OPTIONS, **(annotation_options or {})}
     bucket_id = _bucket_id(bucket)
     meta = bucket.get("metadata") if isinstance(bucket.get("metadata"), dict) else {}
     base_meta = _bucket_metadata(meta, bucket)
@@ -353,7 +381,14 @@ def parse_bucket_moments(bucket: dict) -> list[dict]:
 
     content = _clean_text(bucket.get("content", ""))
     if content:
-        structured = _content_moments(bucket_id, content, base_meta, updated_at)
+        structured = _content_moments(
+            bucket_id,
+            content,
+            base_meta,
+            updated_at,
+            relevance_options,
+            annotation_options,
+        )
         if structured:
             for moment in structured:
                 moment["ordinal"] = ordinal
@@ -372,6 +407,8 @@ def parse_bucket_moments(bucket: dict) -> list[dict]:
                     metadata=base_meta,
                     created_at=str(meta.get("created") or meta.get("updated_at") or ""),
                     updated_at=updated_at,
+                    relevance_options=relevance_options,
+                    annotation_options=annotation_options,
                 )
             )
             ordinal += 1
@@ -407,6 +444,8 @@ def parse_bucket_moments(bucket: dict) -> list[dict]:
                     metadata=metadata,
                     created_at=str(comment.get("created") or meta.get("updated_at") or ""),
                     updated_at=updated_at,
+                    relevance_options=relevance_options,
+                    annotation_options=annotation_options,
                 )
             )
             ordinal += 1
@@ -481,7 +520,14 @@ def build_moment_edges(moments: list[dict]) -> list[dict]:
     return _dedupe_edges(edges)
 
 
-def _content_moments(bucket_id: str, content: str, base_meta: dict, updated_at: str) -> list[dict]:
+def _content_moments(
+    bucket_id: str,
+    content: str,
+    base_meta: dict,
+    updated_at: str,
+    relevance_options: MemoryRelevanceOptions,
+    annotation_options: dict,
+) -> list[dict]:
     blocks = _split_markdown_blocks(content)
     if not any(_canonical_section(block["heading"]) for block in blocks if block["heading"]):
         return []
@@ -508,6 +554,8 @@ def _content_moments(bucket_id: str, content: str, base_meta: dict, updated_at: 
                 metadata=base_meta,
                 created_at=str(base_meta.get("bucket_created") or ""),
                 updated_at=updated_at,
+                relevance_options=relevance_options,
+                annotation_options=annotation_options,
             )
         )
         ordinal += 1
@@ -611,9 +659,18 @@ def _make_moment(
     metadata: dict,
     created_at: str,
     updated_at: str,
+    relevance_options: MemoryRelevanceOptions | None = None,
+    annotation_options: dict | None = None,
 ) -> dict:
     text = _clean_text(text)
     metadata = _clean_metadata(metadata)
+    metadata = _annotated_metadata(
+        text,
+        section,
+        metadata,
+        relevance_options or memory_relevance_options_from_config(),
+        annotation_options or DEFAULT_ANNOTATION_OPTIONS,
+    )
     moment_id = _moment_id(bucket_id, source, section, ordinal, source_id)
     metadata_json = json.dumps(metadata, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return {
@@ -663,18 +720,141 @@ def _bucket_metadata(meta: dict, bucket: dict) -> dict:
     )
 
 
+def _annotated_metadata(
+    text: str,
+    section: str,
+    metadata: dict,
+    relevance_options: MemoryRelevanceOptions,
+    annotation_options: dict,
+) -> dict:
+    if not _bool_value(annotation_options.get("enabled", True), True):
+        return metadata
+
+    max_summary_chars = _int_between(annotation_options.get("max_summary_chars", 160), 160, 40, 500)
+    max_spans = _int_between(annotation_options.get("max_evidence_spans", 3), 3, 0, 10)
+    max_evidence_chars = _int_between(annotation_options.get("max_evidence_chars", 120), 120, 30, 500)
+    annotated = dict(metadata)
+    summary = _moment_summary(text, max_summary_chars)
+    if summary:
+        annotated.setdefault("annotation_summary", summary)
+        annotated.setdefault("summary", summary)
+
+    node = {
+        "section": section,
+        "text": text,
+        "metadata": annotated,
+    }
+    facets = facets_for_node(node, relevance_options)
+    active = {}
+    for facet, score in facets.items():
+        safe_score = _safe_float(score)
+        if safe_score is not None and safe_score >= 0.3:
+            active[facet] = round(safe_score, 3)
+    if active:
+        annotated.setdefault("annotation_facets", active)
+        evidence_spans = _evidence_spans_for_facets(text, active, relevance_options, max_spans, max_evidence_chars)
+        if evidence_spans:
+            annotated.setdefault("evidence_spans", evidence_spans)
+    return _clean_metadata(annotated)
+
+
+def _moment_summary(text: str, max_chars: int) -> str:
+    compact = " ".join(_clean_text(text).split())
+    if not compact:
+        return ""
+    sentences = re.split(r"(?<=[。！？!?；;])\s*", compact)
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if sentence:
+            return _clip_text(sentence, max_chars)
+    return _clip_text(compact, max_chars)
+
+
+def _evidence_spans_for_facets(
+    text: str,
+    facets: dict[str, float],
+    relevance_options: MemoryRelevanceOptions,
+    max_spans: int,
+    max_chars: int,
+) -> list[dict]:
+    if max_spans <= 0:
+        return []
+    compact = " ".join(_clean_text(text).split())
+    if not compact:
+        return []
+    spans = []
+    for facet, _score in sorted(facets.items(), key=lambda item: item[1], reverse=True):
+        aliases = relevance_options.aliases.get(facet, ())
+        span = _best_evidence_span(compact, aliases, max_chars)
+        if not span:
+            continue
+        item = {"facet": facet, "text": span}
+        if item not in spans:
+            spans.append(item)
+        if len(spans) >= max_spans:
+            break
+    if not spans:
+        spans.append({"facet": "summary", "text": _clip_text(compact, max_chars)})
+    return spans
+
+
+def _best_evidence_span(text: str, aliases: tuple[str, ...], max_chars: int) -> str:
+    text_lower = text.lower()
+    for alias in sorted((str(item) for item in aliases or ()), key=len, reverse=True):
+        alias = alias.strip()
+        if not alias:
+            continue
+        index = text_lower.find(alias.lower())
+        if index < 0:
+            continue
+        start = max(0, index - max_chars // 3)
+        end = min(len(text), index + len(alias) + max_chars // 2)
+        return _clip_text(text[start:end].strip(), max_chars)
+    return ""
+
+
+def _join_evidence_spans(raw: Any) -> str:
+    if not isinstance(raw, list):
+        return ""
+    parts = []
+    for item in raw:
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("span") or ""
+        else:
+            text = item
+        if str(text).strip():
+            parts.append(str(text))
+    return " ".join(parts)
+
+
 def _clean_metadata(metadata: dict) -> dict:
     cleaned = {}
     for key, value in (metadata or {}).items():
-        if value is None:
-            continue
-        if isinstance(value, (str, int, float, bool)):
-            cleaned[key] = value
-        elif isinstance(value, (list, tuple)):
-            cleaned[key] = [item for item in value if isinstance(item, (str, int, float, bool))]
-        else:
-            cleaned[key] = str(value)
+        cleaned_value = _clean_metadata_value(value)
+        if cleaned_value is not None:
+            cleaned[key] = cleaned_value
     return cleaned
+
+
+def _clean_metadata_value(value: Any):
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        cleaned = {
+            str(key): cleaned_value
+            for key, item in value.items()
+            if (cleaned_value := _clean_metadata_value(item)) is not None
+        }
+        return cleaned
+    if isinstance(value, (list, tuple)):
+        return [
+            cleaned_item
+            for item in value
+            if (cleaned_item := _clean_metadata_value(item)) is not None
+        ]
+    return str(value)
 
 
 def _bucket_id(bucket: dict) -> str:
@@ -706,6 +886,11 @@ def _moment_query_score(
     fields = " ".join(
         [
             text,
+            str(meta.get("annotation_summary") or ""),
+            _join_evidence_spans(meta.get("evidence_spans")),
+            " ".join(str(facet) for facet in (meta.get("annotation_facets") or {}).keys())
+            if isinstance(meta.get("annotation_facets"), dict)
+            else "",
             str(meta.get("bucket_name") or ""),
             " ".join(_list_text(meta.get("bucket_tags"))),
             " ".join(_list_text(meta.get("bucket_domain"))),
@@ -790,6 +975,38 @@ def _metadata_float(meta: dict, key: str, default: float) -> float:
         return float(meta.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _safe_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clip_text(text: str, max_chars: int) -> str:
+    compact = " ".join(str(text or "").split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[:max_chars].rstrip() + "..."
+
+
+def _bool_value(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _int_between(value: Any, default: int, min_value: int, max_value: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(min_value, min(max_value, number))
 
 
 def _clean_text(value: Any) -> str:

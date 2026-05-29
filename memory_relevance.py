@@ -256,12 +256,18 @@ def facets_for_node(
                     str(node.get("text") or ""),
                     str(node.get("content") or ""),
                     str(meta.get("summary") or ""),
+                    str(meta.get("annotation_summary") or ""),
+                    _join_evidence_spans(meta.get("evidence_spans")),
                 ]
             )[:4000],
             0.5,
         ),
     )
     scores = _facet_scores(fields, options)
+    for facet, value in _numeric_facets(meta.get("annotation_facets")).items():
+        if facet in options.blocked_facets:
+            continue
+        scores[facet] = max(scores.get(facet, 0.0), value)
 
     section = _normalize_section(node.get("section") or meta.get("section") or "")
     for facet in options.section_hints.get(section, ()):
@@ -487,6 +493,35 @@ def _facet_scores(
         if score > 0:
             scores[facet] = round(min(1.0, score), 3)
     return scores
+
+
+def _numeric_facets(raw: Any) -> dict[str, float]:
+    if not isinstance(raw, dict):
+        return {}
+    facets = {}
+    for key, value in raw.items():
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            continue
+        key = str(key).strip()
+        if key:
+            facets[key] = max(0.0, min(1.0, score))
+    return facets
+
+
+def _join_evidence_spans(raw: Any) -> str:
+    if not isinstance(raw, list):
+        return ""
+    parts = []
+    for item in raw:
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("span") or ""
+        else:
+            text = item
+        if str(text).strip():
+            parts.append(str(text))
+    return " ".join(parts)
 
 
 def _alias_match_score(text: str, aliases: tuple[str, ...]) -> float:

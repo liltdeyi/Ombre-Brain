@@ -86,6 +86,12 @@ def load_config(config_path: str = None) -> dict:
             "explicit_vector_min_score": 0.55,
             "vague_top_k": 50,
         },
+        "moment_annotations": {
+            "enabled": True,
+            "max_summary_chars": 160,
+            "max_evidence_spans": 3,
+            "max_evidence_chars": 120,
+        },
         "decay": {
             "lambda": 0.05,
             "threshold": 0.3,

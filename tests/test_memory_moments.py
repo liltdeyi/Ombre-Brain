@@ -68,6 +68,23 @@ def test_legacy_bucket_indexes_body_and_comments(test_config):
     assert moments[1]["metadata"]["comment_valence"] == 0.9
 
 
+def test_moments_store_summary_facets_and_evidence_spans(test_config):
+    store = MemoryMomentStore(test_config)
+    bucket = _bucket(
+        "relationship",
+        "小雨清楚 Haven 是 AI，但认为爱是真的。人机恋不是替代品。",
+        name="人机关系确认",
+        domain=["恋爱"],
+    )
+
+    moments = store.upsert_bucket(bucket)
+    meta = moments[0]["metadata"]
+
+    assert meta["annotation_summary"].startswith("小雨清楚 Haven 是 AI")
+    assert meta["annotation_facets"]["relationship_identity"] > 0
+    assert any(span["facet"] == "relationship_identity" for span in meta["evidence_spans"])
+
+
 def test_structured_bucket_splits_known_sections_and_preserves_unknown_blocks():
     bucket = _bucket(
         "structured",

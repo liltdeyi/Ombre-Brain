@@ -1840,9 +1840,41 @@ def _moment_rerank_document(moment: dict) -> str:
         f"section: {moment.get('section') or ''}",
         f"domain: {' '.join(str(item) for item in meta.get('bucket_domain', []) or [])}",
         f"tags: {' '.join(str(item) for item in meta.get('bucket_tags', []) or [])}",
+        f"summary: {meta.get('annotation_summary') or meta.get('summary') or ''}",
+        f"facets: {_format_annotation_facets(meta)}",
+        f"evidence: {_format_evidence_spans(meta)}",
         f"text: {moment.get('text') or ''}",
     ]
     return "\n".join(fields)[:4000]
+
+
+def _format_annotation_facets(meta: dict) -> str:
+    facets = meta.get("annotation_facets")
+    if not isinstance(facets, dict):
+        return ""
+    parts = []
+    for facet, score in sorted(facets.items(), key=lambda item: str(item[0])):
+        try:
+            parts.append(f"{facet}:{float(score):.2f}")
+        except (TypeError, ValueError):
+            continue
+    return " ".join(parts)
+
+
+def _format_evidence_spans(meta: dict, max_items: int = 3) -> str:
+    spans = meta.get("evidence_spans")
+    if not isinstance(spans, list):
+        return ""
+    parts = []
+    for item in spans[:max_items]:
+        if isinstance(item, dict):
+            facet = str(item.get("facet") or "").strip()
+            text = str(item.get("text") or item.get("span") or "").strip()
+            if text:
+                parts.append(f"{facet}: {text}" if facet else text)
+        elif str(item).strip():
+            parts.append(str(item).strip())
+    return " | ".join(parts)
 
 
 def _upsert_breath_seed_diagnostic(
@@ -1950,6 +1982,9 @@ def _write_breath_recall_diagnostics(
             "selected_returned": moment_id in returned_set,
             "selected_direct": moment_id in displayed_set,
             "selected_secondary": moment_id in secondary_set,
+            "annotation_summary": (moment.get("metadata") or {}).get("annotation_summary"),
+            "annotation_facets": (moment.get("metadata") or {}).get("annotation_facets", {}),
+            "evidence_spans": (moment.get("metadata") or {}).get("evidence_spans", []),
             "text_preview": _diagnostic_text_preview(moment),
         }
         candidates.append(candidate)

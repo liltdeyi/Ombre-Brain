@@ -70,3 +70,20 @@ def test_config_aliases_blocked_facets_and_section_hints_extend_defaults():
     assert "communication_action" in active_facets(query_facets)
     assert "hardware_protocol" in active_facets(node_facets)
     assert facets_for_text("亲密", options).get("intimacy", 0) == 0
+
+
+def test_annotation_facets_drive_node_relevance_without_alias_text():
+    decision = relevance_decision(
+        "人机恋",
+        {
+            "text": "opaque remembered sentence",
+            "metadata": {
+                "annotation_facets": {"relationship_identity": 0.92},
+                "evidence_spans": [{"facet": "relationship_identity", "text": "model evidence"}],
+            },
+        },
+    )
+
+    assert not decision.suppress
+    assert decision.multiplier > 1
+    assert "facet_overlap" in decision.reasons

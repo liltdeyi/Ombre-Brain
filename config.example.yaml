@@ -170,6 +170,16 @@ recall_thresholds:
   explicit_vector_min_score: 0.55    # IDs/protocols/model names / 明确实体
   vague_top_k: 50
 
+# --- Moment annotations / 记忆片段标注 ---
+# Stores lightweight summary/facets/evidence_spans in moment metadata.
+# The current built-in annotator is a deterministic fallback; future workers can
+# overwrite annotation_facets/evidence_spans with model-produced evidence.
+moment_annotations:
+  enabled: true
+  max_summary_chars: 160
+  max_evidence_spans: 3
+  max_evidence_chars: 120
+
 # --- Gateway / 网关注入配置 ---
 # Exposes an OpenAI-compatible /v1/chat/completions endpoint that injects
 # Core Memory + Recent Context + Recalled Memory before forwarding upstream
