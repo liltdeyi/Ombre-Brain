@@ -1513,6 +1513,13 @@ async def _build_mcp_diffused_memory_block(
         meta = target.get("metadata", {})
         if meta.get("type") == "feel":
             continue
+        if (
+            query_text
+            and _query_has_explicit_entity_marker(query_text)
+            and not _query_wants_body_chain(query_text)
+            and not _bucket_has_query_topic_evidence(query_text, target)
+        ):
+            continue
 
         try:
             clean_meta = {k: v for k, v in meta.items() if k != "tags"}
@@ -2224,6 +2231,22 @@ def _moment_has_query_topic_evidence(query: str, moment: dict) -> bool:
             str(meta.get("bucket_name") or ""),
             " ".join(str(tag) for tag in (meta.get("bucket_tags") or []) if str(tag).strip()),
             " ".join(str(item) for item in (meta.get("bucket_domain") or []) if str(item).strip()),
+        ]
+    ).lower()
+    return any(term.lower() in fields for term in terms)
+
+
+def _bucket_has_query_topic_evidence(query: str, bucket: dict) -> bool:
+    terms = _specific_query_terms(query)
+    if not terms:
+        return False
+    meta = bucket.get("metadata", {}) if isinstance(bucket.get("metadata"), dict) else {}
+    fields = " ".join(
+        [
+            _bucket_text_for_embedding(bucket),
+            str(meta.get("name") or ""),
+            " ".join(str(tag) for tag in (meta.get("tags") or []) if str(tag).strip()),
+            " ".join(str(item) for item in (meta.get("domain") or []) if str(item).strip()),
         ]
     ).lower()
     return any(term.lower() in fields for term in terms)

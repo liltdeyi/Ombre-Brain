@@ -689,6 +689,7 @@ async def test_search_related_stays_on_displayed_direct_topic(patch_breath):
         search_ids=["F", "G", "D", "H", "I"],
         edges=[
             {"source": "F", "target": "G", "relation_type": "supports", "confidence": 1.0},
+            {"source": "F", "target": "D", "relation_type": "supports", "confidence": 1.0},
             {"source": "H", "target": "B", "relation_type": "supports", "confidence": 1.0},
             {"source": "I", "target": "S", "relation_type": "supports", "confidence": 1.0},
         ],
