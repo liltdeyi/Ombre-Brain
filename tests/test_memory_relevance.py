@@ -4,6 +4,7 @@ from memory_relevance import (
     facets_for_node,
     facets_for_text,
     memory_relevance_options_from_config,
+    query_has_explicit_entity_marker,
     recall_search_query,
     relevance_decision,
 )
@@ -128,3 +129,11 @@ def test_context_name_does_not_override_action_intent():
     assert "communication_action_missing_demoted" in missing_action.reasons
     assert email_action.multiplier > 1
     assert "facet_overlap" in email_action.reasons
+
+
+def test_explicit_entity_marker_handles_titlecase_entities_without_sentence_starters():
+    assert query_has_explicit_entity_marker("Titans")
+    assert query_has_explicit_entity_marker("Tell me about Titans")
+    assert query_has_explicit_entity_marker("Ombre 补的写入心脏")
+    assert not query_has_explicit_entity_marker("Can you help me remember")
+    assert not query_has_explicit_entity_marker("What should I do today")

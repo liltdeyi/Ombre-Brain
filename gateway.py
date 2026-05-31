@@ -40,6 +40,8 @@ from memory_relevance import (
     facets_for_text,
     memory_relevance_options_from_config,
     query_has_facet,
+    query_has_explicit_entity_marker,
+    recall_admission_decision,
     recall_rank,
     recall_search_query,
     relevance_multiplier,
@@ -223,6 +225,12 @@ class GatewayService:
         )
         self.high_confidence_cooldown_floor = self._clamp(
             float(self.gateway_cfg.get("high_confidence_cooldown_floor", 0.8))
+        )
+        self.recall_admission_semantic_score = self._clamp(
+            float(self.gateway_cfg.get("recall_admission_semantic_score", self.high_confidence_semantic_score))
+        )
+        self.recall_admission_rerank_score = self._clamp(
+            float(self.gateway_cfg.get("recall_admission_rerank_score", 0.65))
         )
         self.edge_min_confidence = float(self.gateway_cfg.get("edge_min_confidence", 0.55))
         self.upstream_key_cooldown_seconds = max(
@@ -568,6 +576,7 @@ class GatewayService:
         recent_context = ""
         recalled_moments: list[dict] = []
         moment_candidates: list[dict] = []
+        suppressed_moments: list[dict] = []
         all_moments: list[dict] = []
         grouped_moments: dict[str, list[dict]] = {}
         moment_edges: list[dict] = []
@@ -594,12 +603,14 @@ class GatewayService:
             recent_context = await self._build_recent_context_block(all_buckets, current_user_query)
             if self.recalled_budget > 0 or self.related_memory_budget > 0:
                 all_moments, grouped_moments, moment_edges = self._refresh_moment_graph(all_buckets)
-                recalled_moments, moment_candidates = await self._select_dynamic_moments(
+                recalled_moments, moment_candidates, suppressed_moments = await self._select_dynamic_moments(
                     current_user_query,
                     session_id,
                     all_buckets,
                     grouped_moments,
                 )
+            else:
+                suppressed_moments = []
             recalled_memory = self._format_recalled_moments(
                 recalled_moments,
                 grouped_moments,
@@ -669,6 +680,7 @@ class GatewayService:
                 related_memory=related_memory,
                 favorite_ids=favorite_ids,
                 context_mode=context_mode,
+                suppressed_moments=suppressed_moments,
             )
         return forward_payload, injected_ids
 
@@ -2320,9 +2332,9 @@ class GatewayService:
         session_id: str,
         all_buckets: list[dict],
         grouped_moments: dict[str, list[dict]],
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> tuple[list[dict], list[dict], list[dict]]:
         if not query or self.inject_max_cards <= 0:
-            return [], []
+            return [], [], []
 
         relevance_query = self._query_has_relevance_facet(query)
         eligible_ids = {
@@ -2338,7 +2350,7 @@ class GatewayService:
             )
         }
         if not eligible_ids:
-            return [], []
+            return [], [], []
 
         search_query = recall_search_query(query, self.relevance_options)
         selected_buckets = await self._select_dynamic_buckets(
@@ -2361,6 +2373,16 @@ class GatewayService:
         ]
         candidates = self._apply_relevance_to_moment_candidates(query, candidates)
         candidates = await self._rerank_moment_candidates(query, candidates)
+        admitted_bucket_ids = set(selected_bucket_ids)
+        admitted_candidates = []
+        suppressed_candidates = []
+        for moment in candidates:
+            item = dict(moment)
+            if self._admit_moment_for_recall(query, item, admitted_bucket_ids=admitted_bucket_ids):
+                admitted_candidates.append(item)
+            else:
+                suppressed_candidates.append(item)
+        candidates = admitted_candidates
 
         selected: list[dict] = []
         seen_buckets: set[str] = set()
@@ -2379,7 +2401,7 @@ class GatewayService:
                 seen_buckets.add(bucket_id)
 
         if selected:
-            return selected[: self.inject_max_cards], candidates
+            return selected[: self.inject_max_cards], candidates, suppressed_candidates
 
         recent_ids = self.state_store.get_recent_bucket_ids(session_id, self.skip_recent_rounds)
         active_candidates = [
@@ -2396,7 +2418,7 @@ class GatewayService:
             seen_buckets.add(bucket_id)
             if len(selected) >= self.inject_max_cards:
                 break
-        return selected, candidates
+        return selected, candidates, suppressed_candidates
 
     async def _rerank_moment_candidates(self, query: str, candidates: list[dict]) -> list[dict]:
         if not candidates or not getattr(self.reranker_engine, "enabled", False):
@@ -2724,16 +2746,7 @@ class GatewayService:
 
     @staticmethod
     def _query_has_explicit_entity_marker(query: str) -> bool:
-        text = str(query or "")
-        if re.search(r"\b[A-Z0-9][A-Z0-9._:/-]{2,}\b", text):
-            return True
-        if re.search(r"\b0x[0-9a-fA-F]+\b", text):
-            return True
-        if re.search(r"\b[A-Za-z]+/[A-Za-z0-9._-]+\b", text):
-            return True
-        if re.search(r"\d", text):
-            return True
-        return False
+        return query_has_explicit_entity_marker(query)
 
     def _moment_has_query_topic_evidence(self, query: str, moment: dict) -> bool:
         terms = self._specific_query_terms(query)
@@ -3241,6 +3254,12 @@ class GatewayService:
         scored_candidates = await self._rerank_scored_bucket_candidates(query, scored_candidates)
         filtered = [item for item in scored_candidates if item["bucket"]["id"] not in recent_ids]
         active_pool = filtered or scored_candidates
+        active_pool = [
+            item for item in active_pool
+            if self._admit_bucket_for_recall(query, item)
+        ]
+        if not active_pool:
+            return []
         selected = self._pick_dynamic_cards(active_pool)
         return [item["bucket"] for item in selected]
 
@@ -3302,6 +3321,58 @@ class GatewayService:
             semantic_score >= self.high_confidence_semantic_score
             or keyword_score >= self.high_confidence_keyword_score
         )
+
+    def _recall_admission_decision(
+        self,
+        query: str,
+        node: dict,
+        *,
+        semantic_score: float | None = None,
+        rerank_score: float | None = None,
+        high_confidence_edge: bool = False,
+    ):
+        return recall_admission_decision(
+            query,
+            node,
+            self.relevance_options,
+            semantic_score=semantic_score,
+            rerank_score=rerank_score,
+            high_confidence_edge=high_confidence_edge,
+            semantic_threshold=self.recall_admission_semantic_score,
+            rerank_threshold=self.recall_admission_rerank_score,
+        )
+
+    def _admit_bucket_for_recall(self, query: str, item: dict) -> bool:
+        bucket = item.get("bucket") if isinstance(item, dict) else None
+        if not isinstance(bucket, dict):
+            return False
+        decision = self._recall_admission_decision(
+            query,
+            self._bucket_relevance_node(bucket),
+            semantic_score=item.get("semantic_score"),
+            rerank_score=item.get("rerank_score"),
+        )
+        item["admission_reason"] = decision.reason
+        return decision.admit
+
+    def _admit_moment_for_recall(
+        self,
+        query: str,
+        moment: dict,
+        *,
+        admitted_bucket_ids: set[str] | None = None,
+    ) -> bool:
+        bucket_id = str(moment.get("bucket_id") or "")
+        if admitted_bucket_ids and bucket_id in admitted_bucket_ids:
+            moment["admission_reason"] = "admitted_bucket"
+            return True
+        decision = self._recall_admission_decision(
+            query,
+            moment,
+            rerank_score=moment.get("rerank_score"),
+        )
+        moment["admission_reason"] = decision.reason
+        return decision.admit
 
     def _get_keyword_candidates(self, query: str, buckets: list[dict]) -> dict[str, float]:
         scored = []
@@ -3524,6 +3595,7 @@ class GatewayService:
         related_memory: str,
         favorite_ids: list[str],
         context_mode: str = "",
+        suppressed_moments: list[dict] | None = None,
     ) -> dict[str, Any]:
         recalled_moment_ids = [
             str(moment.get("moment_id") or "")
@@ -3547,6 +3619,23 @@ class GatewayService:
             "diffused_bucket_ids": diffused_bucket_ids,
             "recalled_moment_ids": recalled_moment_ids,
             "diffused_moment_ids": self._extract_moment_ids_from_context(related_memory),
+            "suppressed_candidates": [
+                {
+                    "bucket_id": str(moment.get("bucket_id") or ""),
+                    "bucket_name": self._moment_bucket_title(moment),
+                    "moment_id": str(moment.get("moment_id") or ""),
+                    "section": moment.get("section"),
+                    "admission_reason": str(moment.get("admission_reason") or "suppressed"),
+                    "score": self._safe_float(moment.get("score"), 0.0),
+                    "rerank_score": (
+                        self._safe_float(moment.get("rerank_score"), 0.0)
+                        if moment.get("rerank_score") is not None
+                        else None
+                    ),
+                    "text_preview": self._moment_text(moment, 180),
+                }
+                for moment in (suppressed_moments or [])[:20]
+            ],
             "context_mode": context_mode,
             "recalled_memory": recalled_memory,
             "diffused_memory": related_memory,

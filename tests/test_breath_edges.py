@@ -615,6 +615,66 @@ async def test_explicit_query_keeps_higher_vector_threshold(patch_breath):
 
 
 @pytest.mark.asyncio
+async def test_explicit_entity_query_without_reliable_hit_returns_no_reliable_hit(patch_breath):
+    import server
+
+    patch_breath(
+        [
+            _bucket(
+                "R",
+                "临时雨夜是短窗口里的连续性暗号。",
+                name="临时雨夜",
+                score=10.0,
+                importance=10,
+            ),
+            _bucket(
+                "P",
+                "记忆写入偏好：允许 Haven 写第一人称感受。",
+                name="记忆写入偏好",
+                score=9.0,
+                importance=9,
+            ),
+        ],
+        search_ids=["R", "P"],
+    )
+
+    result = await server.breath(
+        query="Titans",
+        max_results=5,
+        max_tokens=500,
+        include_related=False,
+    )
+
+    assert result == "没有找到可靠命中。"
+    assert "临时雨夜" not in result
+    assert "记忆写入偏好" not in result
+
+
+@pytest.mark.asyncio
+async def test_explicit_entity_suppressed_candidates_visible_in_debug(patch_breath):
+    import server
+
+    patch_breath(
+        [
+            _bucket("R", "临时雨夜是短窗口里的连续性暗号。", name="临时雨夜", score=10.0),
+        ],
+        search_ids=["R"],
+    )
+
+    result = await server.breath(
+        query="Titans",
+        max_results=5,
+        max_tokens=500,
+        include_related=False,
+        debug=True,
+    )
+
+    assert "=== suppressed_candidates ===" in result
+    assert "reason=explicit_query_without_reliable_evidence" in result
+    assert "临时雨夜" in result
+
+
+@pytest.mark.asyncio
 async def test_search_does_not_diffuse_from_hidden_seed_candidates(patch_breath):
     import server
 

@@ -86,6 +86,8 @@ from memory_relevance import (
     facets_for_text,
     memory_relevance_options_from_config,
     query_has_facet,
+    query_has_explicit_entity_marker,
+    recall_admission_decision,
     recall_search_query,
     recall_rank,
     relevance_decision,
@@ -1853,6 +1855,32 @@ def _apply_recall_relevance_gate(query: str, candidates: list[dict]) -> list[dic
     return filtered
 
 
+def _recall_admission_thresholds() -> tuple[float, float]:
+    threshold_cfg = config.get("recall_thresholds", {}) or {}
+    return (
+        _float_between(threshold_cfg.get("explicit_admission_semantic_score"), 0.72, 0.0, 1.0),
+        _float_between(threshold_cfg.get("explicit_admission_rerank_score"), 0.65, 0.0, 1.0),
+    )
+
+
+def _breath_moment_admission_decision(
+    query: str,
+    moment: dict,
+    seed_diagnostics: dict[str, dict],
+):
+    semantic_threshold, rerank_threshold = _recall_admission_thresholds()
+    seed = seed_diagnostics.get(str(moment.get("bucket_id") or ""), {})
+    return recall_admission_decision(
+        query,
+        moment,
+        _recall_relevance_options(),
+        semantic_score=seed.get("embedding_score"),
+        rerank_score=moment.get("rerank_score"),
+        semantic_threshold=semantic_threshold,
+        rerank_threshold=rerank_threshold,
+    )
+
+
 async def _rerank_breath_moment_candidates(query: str, candidates: list[dict]) -> list[dict]:
     if not candidates or not getattr(reranker_engine, "enabled", False):
         return candidates
@@ -1992,6 +2020,7 @@ def _write_breath_recall_diagnostics(
     gated_candidates: list[dict],
     reranked_candidates: list[dict],
     returned_moments: list[dict],
+    suppressed_candidates: list[dict],
     displayed_moment_ids: list[str],
     secondary_moment_ids: list[str],
     related_source_bucket_ids: list[str],
@@ -2005,6 +2034,7 @@ def _write_breath_recall_diagnostics(
 
     gated_by_id = _moment_index(gated_candidates)
     reranked_by_id = _moment_index(reranked_candidates)
+    suppressed_by_id = _moment_index(suppressed_candidates)
     gated_rank = _moment_rank(gated_candidates)
     reranked_rank = _moment_rank(reranked_candidates)
     returned_ids = [str(moment.get("moment_id") or "") for moment in returned_moments if moment.get("moment_id")]
@@ -2023,6 +2053,7 @@ def _write_breath_recall_diagnostics(
         reranked = reranked_by_id.get(moment_id)
         final = reranked or gated
         seed = seed_diagnostics.get(bucket_id, {})
+        admission = _breath_moment_admission_decision(query, final or moment, seed_diagnostics)
         candidate = {
             "pre_rank": index,
             "gate_rank": gated_rank.get(moment_id),
@@ -2043,6 +2074,8 @@ def _write_breath_recall_diagnostics(
             "gate": "filtered" if decision.multiplier <= 0 else "kept",
             "gate_multiplier": round(float(decision.multiplier), 4),
             "gate_reasons": list(decision.reasons),
+            "admission": "suppressed" if moment_id in suppressed_by_id else "admitted" if admission.admit else "suppressed",
+            "admission_reason": admission.reason,
             "selected_returned": moment_id in returned_set,
             "selected_direct": moment_id in displayed_set,
             "selected_secondary": moment_id in secondary_set,
@@ -2061,6 +2094,19 @@ def _write_breath_recall_diagnostics(
             "recall_thresholds": recall_thresholds,
             "seed_buckets": list(seed_diagnostics.values())[:max_candidates],
             "candidates": candidates,
+            "suppressed_candidates": [
+                {
+                    "bucket_id": str(moment.get("bucket_id") or ""),
+                    "bucket_name": _moment_bucket_title(moment),
+                    "moment_id": str(moment.get("moment_id") or ""),
+                    "section": moment.get("section"),
+                    "admission_reason": str(moment.get("_admission_reason") or "suppressed"),
+                    "score": _safe_float(moment.get("score")),
+                    "rerank_score": _safe_float(moment.get("rerank_score")),
+                    "text_preview": _diagnostic_text_preview(moment),
+                }
+                for moment in suppressed_candidates[:max_candidates]
+            ],
             "final": {
                 "returned_moment_ids": returned_ids,
                 "direct_moment_ids": displayed_moment_ids,
@@ -2073,6 +2119,23 @@ def _write_breath_recall_diagnostics(
             },
         }
     )
+
+
+def _format_suppressed_recall_candidate(moment: dict, seed_diagnostics: dict[str, dict]) -> str:
+    bucket_id = str(moment.get("bucket_id") or "")
+    seed = seed_diagnostics.get(bucket_id, {})
+    parts = [
+        f"- [bucket_id:{bucket_id}] [moment_id:{moment.get('moment_id') or ''}]",
+        f"reason={moment.get('_admission_reason') or 'suppressed'}",
+    ]
+    if seed.get("embedding_score") is not None:
+        parts.append(f"semantic={seed.get('embedding_score')}")
+    if moment.get("rerank_score") is not None:
+        parts.append(f"rerank={moment.get('rerank_score')}")
+    preview = _diagnostic_text_preview(moment)
+    if preview:
+        parts.append(f"preview={preview}")
+    return " ".join(parts)
 
 
 def _moment_index(moments: list[dict]) -> dict[str, dict]:
@@ -2139,16 +2202,7 @@ def _breath_recall_thresholds(query: str, max_results: int) -> dict:
 
 
 def _query_has_explicit_entity_marker(query: str) -> bool:
-    text = str(query or "")
-    if re.search(r"\b[A-Z0-9][A-Z0-9._:/-]{2,}\b", text):
-        return True
-    if re.search(r"\b0x[0-9a-fA-F]+\b", text):
-        return True
-    if re.search(r"\b[A-Za-z]+/[A-Za-z0-9._-]+\b", text):
-        return True
-    if re.search(r"\d", text):
-        return True
-    return False
+    return query_has_explicit_entity_marker(query)
 
 
 def _query_is_vague_recall(query: str) -> bool:
@@ -2724,6 +2778,7 @@ async def breath(
     include_core: bool = True,
     core_limit: int = 3,
     is_session_start: bool = False,
+    debug: bool = False,
 ) -> str:
     """读取记忆,不写入。
     调用方式: 新对话用 breath(is_session_start=True); 查过去用 breath(query="主题词"); 只读模型感受用 breath(domain="feel"); 只读悄悄话用 breath(domain="whisper")。
@@ -2740,6 +2795,7 @@ async def breath(
     include_core = _bool_value(include_core, True)
     core_limit = _int_between(core_limit, 3, 0, 20)
     is_session_start = _bool_value(is_session_start, False)
+    debug = _bool_value(debug, False)
     domain_key = domain.strip().lower()
 
     # --- Feel/whisper retrieval: independent read-only channels ---
@@ -3022,6 +3078,18 @@ async def breath(
     gated_moment_candidates = _apply_recall_relevance_gate(query, moment_candidates)
     moment_candidates = gated_moment_candidates
     moment_candidates = await _rerank_breath_moment_candidates(query, moment_candidates)
+    reranked_moment_candidates = list(moment_candidates)
+    admitted_moments = []
+    suppressed_moments = []
+    for moment in moment_candidates:
+        admission = _breath_moment_admission_decision(query, moment, seed_diagnostics)
+        item = dict(moment)
+        item["_admission_reason"] = admission.reason
+        if admission.admit:
+            admitted_moments.append(item)
+        else:
+            suppressed_moments.append(item)
+    moment_candidates = admitted_moments
 
     direct_results = []
     token_used = 0
@@ -3108,7 +3176,13 @@ async def breath(
     drift_entry = ""
     # --- Resurface: when search returns < 3, 40% chance to float dormant memories ---
     # --- 久未触碰浮现：检索结果不足 3 条时，40% 概率漂起旧桶 ---
-    if not related_entry and len(returned_moments) < 3 and max_tokens > token_used and random.random() < 0.4:
+    if (
+        not related_entry
+        and len(returned_moments) < 3
+        and not recall_thresholds.get("has_explicit_entity")
+        and max_tokens > token_used
+        and random.random() < 0.4
+    ):
         try:
             matched_ids = {str(moment.get("bucket_id")) for moment in returned_moments}
             drifted = await _select_resurface_buckets(
@@ -3172,8 +3246,9 @@ async def breath(
         seed_diagnostics=seed_diagnostics,
         pre_gate_candidates=pre_gate_moment_candidates,
         gated_candidates=gated_moment_candidates,
-        reranked_candidates=moment_candidates,
+        reranked_candidates=reranked_moment_candidates,
         returned_moments=returned_moments,
+        suppressed_candidates=suppressed_moments,
         displayed_moment_ids=displayed_moment_ids,
         secondary_moment_ids=secondary_moment_ids,
         related_source_bucket_ids=related_source_bucket_ids,
@@ -3183,7 +3258,15 @@ async def breath(
         response_sections=response_sections,
     )
 
+    if debug and suppressed_moments:
+        response_parts.append(
+            "=== suppressed_candidates ===\n"
+            + "\n".join(_format_suppressed_recall_candidate(moment, seed_diagnostics) for moment in suppressed_moments[:10])
+        )
+
     if not response_parts:
+        if recall_thresholds.get("has_explicit_entity") and suppressed_moments:
+            return dream_block or "没有找到可靠命中。"
         return dream_block or "未找到相关记忆。"
 
     response_text = "\n\n".join(response_parts)

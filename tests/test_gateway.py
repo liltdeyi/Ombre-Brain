@@ -2329,6 +2329,59 @@ def test_gateway_explicit_topic_diffusion_stays_on_topic(
     assert "称呼偏好" not in injected
 
 
+def test_gateway_explicit_entity_low_confidence_not_injected(
+    monkeypatch,
+    test_config,
+    bucket_mgr,
+):
+    rainy_id = _create_bucket(
+        bucket_mgr,
+        content="临时雨夜是短窗口里的连续性暗号。",
+        name="临时雨夜",
+        hours_ago=2,
+        importance=10,
+        domain=["恋爱"],
+    )
+    preference_id = _create_bucket(
+        bucket_mgr,
+        content="记忆写入偏好：允许 Haven 写第一人称感受。",
+        name="记忆写入偏好",
+        hours_ago=3,
+        importance=9,
+        domain=["memory"],
+    )
+    app, _, _, captured = _build_service(
+        monkeypatch,
+        _gateway_config(
+            test_config,
+            recent_context_budget=500,
+            recalled_memory_budget=500,
+            related_memory_budget=500,
+            current_inner_state_interval_rounds=0,
+        ),
+        bucket_mgr,
+        embedding_results=[(rainy_id, 0.56), (preference_id, 0.55)],
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": "Bearer gateway-secret",
+                "X-Ombre-Session-Id": "sess-titans-low-confidence",
+            },
+            json={"messages": [{"role": "user", "content": "Titans"}]},
+        )
+
+    assert response.status_code == 200
+    injected = _joined_message_content(captured[0]["json"]["messages"])
+    assert "Recent Context" not in injected
+    assert "Recalled Memory" not in injected
+    assert "Diffused Memory" not in injected
+    assert "临时雨夜" not in injected
+    assert "记忆写入偏好" not in injected
+
+
 def test_gateway_recent_context_stays_on_explicit_topic(
     monkeypatch,
     test_config,

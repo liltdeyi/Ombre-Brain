@@ -202,6 +202,12 @@ class RelevanceDecision:
         return self.hard_block
 
 
+@dataclass(frozen=True)
+class RecallAdmissionDecision:
+    admit: bool
+    reason: str
+
+
 def memory_relevance_options_from_config(config: dict | None = None) -> MemoryRelevanceOptions:
     aliases = {facet: list(values) for facet, values in DEFAULT_FACET_ALIASES.items()}
     section_hints = {key: list(values) for key, values in DEFAULT_SECTION_HINTS.items()}
@@ -356,6 +362,99 @@ def recall_search_query(
     if terms and terms != original_terms:
         return " ".join(terms)
     return str(query or "")
+
+
+def query_has_explicit_entity_marker(query: str) -> bool:
+    text = str(query or "").strip()
+    if not text:
+        return False
+    if re.search(r"\b0x[0-9a-fA-F]+\b", text):
+        return True
+    if re.search(r"\b[A-Za-z]+/[A-Za-z0-9._-]+\b", text):
+        return True
+    if re.search(r"\d", text):
+        return True
+    if re.search(r"\b[A-Z0-9][A-Z0-9._:/-]{2,}\b", text):
+        return True
+    title_matches = list(re.finditer(r"\b[A-Z][a-z][A-Za-z0-9._:-]{1,}\b", text))
+    if not title_matches:
+        return False
+    words = re.findall(r"\b[A-Za-z0-9._:-]+\b", text)
+    if len(words) == 1:
+        return True
+    if len(title_matches) >= 2:
+        return True
+    match = title_matches[0]
+    if match.start() > 0:
+        return True
+    leading_word = match.group(0).lower()
+    sentence_starters = {
+        "add",
+        "can",
+        "check",
+        "could",
+        "create",
+        "did",
+        "do",
+        "does",
+        "explain",
+        "find",
+        "fix",
+        "help",
+        "how",
+        "is",
+        "let",
+        "lets",
+        "look",
+        "make",
+        "maybe",
+        "open",
+        "please",
+        "read",
+        "remove",
+        "run",
+        "should",
+        "tell",
+        "today",
+        "update",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "who",
+        "why",
+        "would",
+        "write",
+    }
+    if leading_word in sentence_starters:
+        return False
+    return True
+
+
+def recall_admission_decision(
+    query: str,
+    node: dict,
+    options: MemoryRelevanceOptions | None = None,
+    *,
+    semantic_score: float | None = None,
+    rerank_score: float | None = None,
+    high_confidence_edge: bool = False,
+    semantic_threshold: float = 0.72,
+    rerank_threshold: float = 0.65,
+) -> RecallAdmissionDecision:
+    options = options or memory_relevance_options_from_config()
+    if not query_has_explicit_entity_marker(query):
+        return RecallAdmissionDecision(True, "non_explicit_query")
+    if _has_direct_query_evidence(query, node, options):
+        return RecallAdmissionDecision(True, "topic_evidence")
+    if _safe_float(semantic_score) >= semantic_threshold:
+        return RecallAdmissionDecision(True, "strong_semantic")
+    if _safe_float(rerank_score) >= rerank_threshold:
+        return RecallAdmissionDecision(True, "strong_rerank")
+    if high_confidence_edge:
+        return RecallAdmissionDecision(True, "high_confidence_direct_edge")
+    return RecallAdmissionDecision(False, "explicit_query_without_reliable_evidence")
 
 
 def relevance_decision(
@@ -665,6 +764,13 @@ def _node_text(node: dict) -> str:
 def _is_context_term(term: str, context_terms: tuple[str, ...]) -> bool:
     normalized = _normalize_alias(term)
     return bool(normalized and normalized in set(context_terms or ()))
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _query_terms(query: str) -> list[str]:
