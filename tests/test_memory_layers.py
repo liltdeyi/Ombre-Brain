@@ -17,6 +17,7 @@ from memory_layers import (
     RENDER_FAVORITE,
     RENDER_WEATHER,
     bucket_layer_debug,
+    bucket_runtime_gate_debug,
     can_bucket_be_recent_context,
     can_bucket_be_related_target,
     can_bucket_diffuse,
@@ -27,6 +28,7 @@ from memory_layers import (
     infer_moment_layer,
     is_context_only_section,
     moment_layer_debug,
+    moment_runtime_gate_debug,
     normalize_write_classification,
     policy_for_bucket,
     policy_for_moment,
@@ -93,6 +95,37 @@ def test_writer_classification_maps_stable_and_relationship_to_anchor_policy():
     assert stable_debug["can_recent_context"] is False
     assert stable_debug["writer"]["memory_layer"] == "stable_boundary"
     assert stable_debug["writer"]["runtime_layer_hint"] == LAYER_ANCHOR
+
+
+def test_runtime_gate_debug_explains_injection_decisions():
+    dynamic = _bucket(type="dynamic")
+    dynamic_gate = bucket_runtime_gate_debug(dynamic)
+    assert dynamic_gate["would_inject_related"] is True
+    assert dynamic_gate["related_target"]["reason"] == "allowed"
+    assert dynamic_gate["would_inject_recent_context"] is True
+
+    weather = _bucket(type="feel", tags=["relationship_weather"])
+    weather_gate = bucket_runtime_gate_debug(weather)
+    assert weather_gate["would_inject_related"] is False
+    assert weather_gate["related_target"]["reason"] == "relationship_weather_not_related_target"
+
+    archive = _bucket(type="dynamic", resolved=True)
+    assert bucket_runtime_gate_debug(archive)["related_target"]["reason"] == "archive_requires_explicit_lookup"
+    explicit_archive = bucket_runtime_gate_debug(archive, explicit_lookup=True)
+    assert explicit_archive["would_inject_related"] is True
+    assert explicit_archive["related_target"]["reason"] == "archive_explicit_lookup_allowed"
+
+    body = _moment("body", bucket_type="dynamic")
+    body_gate = moment_runtime_gate_debug(body)
+    assert body_gate["would_inject_direct"] is True
+    assert body_gate["would_inject_related"] is True
+
+    context = _moment("affect_anchor", bucket_type="dynamic")
+    context_gate = moment_runtime_gate_debug(context)
+    assert context_gate["would_inject_direct"] is False
+    assert context_gate["direct_seed"]["reason"] == "context_only_section"
+    assert context_gate["would_inject_related"] is False
+    assert context_gate["related_target"]["reason"] == "context_only_section"
 
 
 def test_manual_favorite_and_core_signals_override_writer_classification():

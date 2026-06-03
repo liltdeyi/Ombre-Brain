@@ -360,10 +360,13 @@ async def test_inspect_diffusion_exposes_scores_facets_and_paths(patch_breath):
     assert result["seeds"][0]["bucket_id"] == "A"
     assert result["seeds"][0]["seed_score"] == 1.0
     assert result["seeds"][0]["layer_debug"]["layer"] == "dynamic_memory"
+    assert result["seeds"][0]["runtime_gate"]["would_diffuse_from"] is True
     assert len(result["hits"]) == 1
     hit = result["hits"][0]
     assert hit["bucket_id"] == "B"
     assert hit["layer_debug"]["layer"] == "dynamic_memory"
+    assert hit["runtime_gate"]["would_inject_related"] is True
+    assert hit["runtime_gate"]["related_injection"]["reason"] == "allowed"
     assert hit["score"] > 0
     assert hit["salience"] > 0
     assert hit["resonance"] > 1.0
@@ -372,6 +375,40 @@ async def test_inspect_diffusion_exposes_scores_facets_and_paths(patch_breath):
     assert "supports:1.00" in hit["path"]
     assert hit["paths"][0]["steps"][0]["relation_type"] == "supports"
     assert bucket_mgr.touched == []
+
+
+@pytest.mark.asyncio
+async def test_inspect_diffusion_marks_layer_blocked_hits(patch_breath):
+    import server
+
+    seed = _bucket("A", "A direct seed 关系天气", score=10.0, importance=10)
+    target = _bucket(
+        "B",
+        "B archived 关系天气 related target",
+        score=1.0,
+        importance=8,
+        resolved=True,
+    )
+    patch_breath(
+        [seed, target],
+        search_ids=["A"],
+        edges=[{"source": "A", "target": "B", "relation_type": "relates_to", "confidence": 1.0}],
+    )
+
+    result = await server.inspect_diffusion(
+        query="关系天气",
+        max_seeds=1,
+        max_hits=3,
+        edge_min_confidence=0.0,
+    )
+
+    assert result["status"] == "ok"
+    assert len(result["hits"]) == 1
+    hit = result["hits"][0]
+    assert hit["bucket_id"] == "B"
+    assert hit["layer_debug"]["layer"] == "archive"
+    assert hit["runtime_gate"]["would_inject_related"] is False
+    assert hit["runtime_gate"]["related_injection"]["reason"] == "archive_requires_explicit_lookup"
 
 
 @pytest.mark.asyncio

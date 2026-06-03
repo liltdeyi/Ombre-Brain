@@ -94,11 +94,13 @@ from memory_relevance import (
 from memory_layers import (
     CONTEXT_ONLY_SECTIONS,
     bucket_layer_debug,
+    bucket_runtime_gate_debug,
     can_bucket_be_related_target,
     can_moment_be_direct_seed,
     can_moment_be_recall_context,
     can_moment_be_related_target,
     moment_layer_debug,
+    moment_runtime_gate_debug,
     normalize_write_classification,
 )
 from recall_policy import RecallPolicy
@@ -2869,6 +2871,40 @@ def _inspect_bucket_layer_payload(bucket: dict | None, *, explicit_lookup: bool 
     return bucket_layer_debug(bucket, explicit_lookup=explicit_lookup)
 
 
+def _inspect_bucket_runtime_gate_payload(
+    bucket: dict | None,
+    *,
+    explicit_lookup: bool = False,
+    query: str = "",
+) -> dict:
+    gate = bucket_runtime_gate_debug(bucket, explicit_lookup=explicit_lookup)
+    topic_required = bool(
+        query
+        and _query_requires_direct_topic_evidence(query)
+        and not _query_wants_body_chain(query)
+    )
+    has_topic_evidence = (
+        _bucket_has_query_topic_evidence(query, bucket)
+        if topic_required and isinstance(bucket, dict)
+        else False
+    )
+    related_allowed = bool(gate["related_target"]["allowed"])
+    related_reason = str(gate["related_target"]["reason"])
+    if related_allowed and topic_required and not has_topic_evidence:
+        related_allowed = False
+        related_reason = "query_topic_evidence_missing"
+    gate["topic_evidence"] = {
+        "required": topic_required,
+        "present": has_topic_evidence if topic_required else None,
+    }
+    gate["related_injection"] = {
+        "allowed": related_allowed,
+        "reason": related_reason,
+    }
+    gate["would_inject_related"] = related_allowed
+    return gate
+
+
 def _inspect_path_payload(path, bucket_map: dict[str, dict]) -> dict:
     return {
         "score": round(float(path.score), 4),
@@ -2997,6 +3033,11 @@ async def inspect_diffusion(
                 "source": bucket.get("_inspect_source", "keyword"),
                 "seed_score": round(float(seed_scores.get(bucket_id, 0.0)), 4),
                 "layer_debug": _inspect_bucket_layer_payload(bucket, explicit_lookup=explicit_lookup),
+                "runtime_gate": _inspect_bucket_runtime_gate_payload(
+                    bucket,
+                    explicit_lookup=explicit_lookup,
+                    query=query,
+                ),
                 **values,
             }
         )
@@ -3011,6 +3052,11 @@ async def inspect_diffusion(
                 "name": _inspect_bucket_label(bucket, hit.bucket_id),
                 "score": hit.activation,
                 "layer_debug": _inspect_bucket_layer_payload(bucket, explicit_lookup=explicit_lookup),
+                "runtime_gate": _inspect_bucket_runtime_gate_payload(
+                    bucket,
+                    explicit_lookup=explicit_lookup,
+                    query=query,
+                ),
                 **values,
                 "path": format_diffusion_trace(hit.best_path, bucket_map, use_labels=True),
                 "path_ids": list(hit.best_path.nodes),
@@ -3049,6 +3095,7 @@ def _inspect_moment_payload(moment: dict, *, include_text: bool) -> dict:
         "text_hash": moment.get("text_hash"),
         "text_length": len(text),
         "layer_debug": moment_layer_debug(moment),
+        "runtime_gate": moment_runtime_gate_debug(moment),
         "metadata": moment.get("metadata", {}),
         "created_at": moment.get("created_at"),
         "updated_at": moment.get("updated_at"),

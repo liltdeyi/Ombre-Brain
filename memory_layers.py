@@ -346,6 +346,135 @@ def can_bucket_be_recent_context(bucket: dict[str, Any] | None, *, explicit_look
     return layer == LAYER_DYNAMIC
 
 
+def _gate_payload(allowed: bool, reason: str) -> dict[str, Any]:
+    return {"allowed": bool(allowed), "reason": reason}
+
+
+def bucket_diffusion_source_gate(bucket: dict[str, Any] | None) -> dict[str, Any]:
+    layer = infer_bucket_layer(bucket)
+    policy = policy_for_layer(layer)
+    if policy.can_diffuse:
+        return _gate_payload(True, "allowed")
+    return _gate_payload(False, "diffusion_policy_never")
+
+
+def bucket_related_target_gate(
+    bucket: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    layer = infer_bucket_layer(bucket)
+    policy = policy_for_layer(layer)
+    if layer == LAYER_ARCHIVE:
+        if explicit_lookup:
+            return _gate_payload(True, "archive_explicit_lookup_allowed")
+        return _gate_payload(False, "archive_requires_explicit_lookup")
+    if layer in {LAYER_DREAM, LAYER_SOURCE_RECORD, LAYER_RELATIONSHIP_WEATHER, LAYER_AFFECT_CONTEXT}:
+        return _gate_payload(False, f"{layer}_not_related_target")
+    if not policy.can_diffuse:
+        return _gate_payload(False, "diffusion_policy_never")
+    return _gate_payload(True, "allowed")
+
+
+def bucket_recent_context_gate(
+    bucket: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    layer = infer_bucket_layer(bucket)
+    if explicit_lookup:
+        if layer in {LAYER_ANCHOR, LAYER_DYNAMIC, LAYER_FAVORITE}:
+            return _gate_payload(True, "explicit_recent_allowed")
+        return _gate_payload(False, "explicit_recent_layer_blocked")
+    if layer == LAYER_DYNAMIC:
+        return _gate_payload(True, "automatic_recent_dynamic_allowed")
+    return _gate_payload(False, "automatic_recent_dynamic_only")
+
+
+def moment_direct_seed_gate(
+    moment: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    moment = moment if isinstance(moment, dict) else {}
+    layer = infer_moment_layer(moment)
+    policy = policy_for_layer(layer)
+    if is_context_only_section(moment.get("section")):
+        return _gate_payload(False, "context_only_section")
+    if policy.direct_seed_policy == DIRECT_NEVER:
+        return _gate_payload(False, "direct_seed_policy_never")
+    if policy.direct_seed_policy == DIRECT_RESONANCE:
+        return _gate_payload(False, "resonance_only_not_normal_direct")
+    if policy.direct_seed_policy == DIRECT_EXPLICIT and not explicit_lookup:
+        return _gate_payload(False, "explicit_lookup_required")
+    if policy.direct_seed_policy == DIRECT_EXPLICIT:
+        return _gate_payload(True, "explicit_lookup_allowed")
+    return _gate_payload(True, "allowed")
+
+
+def moment_related_target_gate(
+    moment: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    moment = moment if isinstance(moment, dict) else {}
+    if not can_moment_be_recall_context(moment):
+        return _gate_payload(False, "parent_layer_not_recall_context")
+    if is_context_only_section(moment.get("section")):
+        return _gate_payload(False, "context_only_section")
+    policy = _parent_policy_for_moment(moment)
+    if policy.layer == LAYER_ARCHIVE:
+        if explicit_lookup:
+            return _gate_payload(True, "archive_explicit_lookup_allowed")
+        return _gate_payload(False, "archive_requires_explicit_lookup")
+    if policy.layer in {LAYER_DREAM, LAYER_SOURCE_RECORD, LAYER_RELATIONSHIP_WEATHER, LAYER_AFFECT_CONTEXT}:
+        return _gate_payload(False, f"{policy.layer}_not_related_target")
+    if not policy.can_diffuse:
+        return _gate_payload(False, "diffusion_policy_never")
+    return _gate_payload(True, "allowed")
+
+
+def bucket_runtime_gate_debug(
+    bucket: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    source = bucket_diffusion_source_gate(bucket)
+    related = bucket_related_target_gate(bucket, explicit_lookup=explicit_lookup)
+    recent = bucket_recent_context_gate(bucket, explicit_lookup=explicit_lookup)
+    return {
+        "layer": infer_bucket_layer(bucket),
+        "diffusion_source": source,
+        "related_target": related,
+        "recent_context": recent,
+        "would_diffuse_from": source["allowed"],
+        "would_inject_related": related["allowed"],
+        "would_inject_recent_context": recent["allowed"],
+    }
+
+
+def moment_runtime_gate_debug(
+    moment: dict[str, Any] | None,
+    *,
+    explicit_lookup: bool = False,
+) -> dict[str, Any]:
+    direct = moment_direct_seed_gate(moment, explicit_lookup=explicit_lookup)
+    related = moment_related_target_gate(moment, explicit_lookup=explicit_lookup)
+    return {
+        "layer": infer_moment_layer(moment),
+        "parent_layer": _parent_policy_for_moment(moment).layer,
+        "section": str((moment or {}).get("section") or "") if isinstance(moment, dict) else "",
+        "direct_seed": direct,
+        "recall_context": _gate_payload(
+            can_moment_be_recall_context(moment),
+            "allowed" if can_moment_be_recall_context(moment) else "parent_layer_not_recall_context",
+        ),
+        "related_target": related,
+        "would_inject_direct": direct["allowed"],
+        "would_inject_related": related["allowed"],
+    }
+
+
 def bucket_layer_debug(bucket: dict[str, Any] | None, *, explicit_lookup: bool = False) -> dict[str, Any]:
     bucket = bucket if isinstance(bucket, dict) else {}
     meta = _metadata(bucket)

@@ -46,12 +46,14 @@ from memory_relevance import (
 from memory_layers import (
     CONTEXT_ONLY_SECTIONS,
     bucket_layer_debug,
+    bucket_runtime_gate_debug,
     can_bucket_be_recent_context,
     can_bucket_be_related_target,
     can_moment_be_direct_seed,
     can_moment_be_recall_context,
     can_moment_be_related_target,
     moment_layer_debug,
+    moment_runtime_gate_debug,
 )
 from recall_policy import RecallPolicy
 from memory_nodes import MemoryNodeStore
@@ -4000,11 +4002,80 @@ class GatewayService:
         remaining = max(0, self.inject_total_budget - stable_tokens)
         return stable_context, self._trim_text(dynamic_context, remaining)
 
+    def _bucket_runtime_gate_payload(
+        self,
+        bucket: dict,
+        *,
+        explicit_lookup: bool = False,
+        query: str = "",
+    ) -> dict[str, Any]:
+        gate = bucket_runtime_gate_debug(bucket, explicit_lookup=explicit_lookup)
+        topic_required = bool(
+            query
+            and self._query_requires_topic_evidence(query)
+            and not self._query_wants_body_chain(query)
+        )
+        has_topic_evidence = (
+            self._bucket_has_query_topic_evidence(query, bucket)
+            if topic_required and isinstance(bucket, dict)
+            else False
+        )
+        related_allowed = bool(gate["related_target"]["allowed"])
+        related_reason = str(gate["related_target"]["reason"])
+        if related_allowed and topic_required and not has_topic_evidence:
+            related_allowed = False
+            related_reason = "query_topic_evidence_missing"
+        gate["topic_evidence"] = {
+            "required": topic_required,
+            "present": has_topic_evidence if topic_required else None,
+        }
+        gate["related_injection"] = {
+            "allowed": related_allowed,
+            "reason": related_reason,
+        }
+        gate["would_inject_related"] = related_allowed
+        return gate
+
+    def _moment_runtime_gate_payload(
+        self,
+        moment: dict,
+        *,
+        explicit_lookup: bool = False,
+        query: str = "",
+    ) -> dict[str, Any]:
+        gate = moment_runtime_gate_debug(moment, explicit_lookup=explicit_lookup)
+        topic_required = bool(
+            query
+            and self._query_requires_topic_evidence(query)
+            and not self._query_wants_body_chain(query)
+        )
+        has_topic_evidence = (
+            self._moment_has_query_topic_evidence(query, moment)
+            if topic_required and isinstance(moment, dict)
+            else False
+        )
+        direct_allowed = bool(gate["direct_seed"]["allowed"])
+        direct_reason = str(gate["direct_seed"]["reason"])
+        if direct_allowed and topic_required and not has_topic_evidence:
+            direct_allowed = False
+            direct_reason = "query_topic_evidence_missing"
+        gate["topic_evidence"] = {
+            "required": topic_required,
+            "present": has_topic_evidence if topic_required else None,
+        }
+        gate["direct_injection"] = {
+            "allowed": direct_allowed,
+            "reason": direct_reason,
+        }
+        gate["would_inject_direct"] = direct_allowed
+        return gate
+
     def _format_suppressed_bucket_debug(
         self,
         item: dict,
         *,
         explicit_lookup: bool = False,
+        query: str = "",
     ) -> dict[str, Any]:
         bucket = item.get("bucket") if isinstance(item, dict) else {}
         if not isinstance(bucket, dict):
@@ -4025,6 +4096,11 @@ class GatewayService:
             ),
             "recall_policy_debug": debug if isinstance(debug, dict) else {},
             "layer_debug": bucket_layer_debug(bucket, explicit_lookup=explicit_lookup),
+            "runtime_gate": self._bucket_runtime_gate_payload(
+                bucket,
+                explicit_lookup=explicit_lookup,
+                query=query,
+            ),
             "content_preview": self._clip_text(strip_wikilinks(str(bucket.get("content") or "")), 180),
         }
 
@@ -4034,6 +4110,7 @@ class GatewayService:
         *,
         explicit_lookup: bool = False,
         include_text: bool = False,
+        query: str = "",
     ) -> dict[str, Any]:
         payload = {
             "bucket_id": str(moment.get("bucket_id") or ""),
@@ -4048,6 +4125,11 @@ class GatewayService:
                 else None
             ),
             "layer_debug": moment_layer_debug(moment, explicit_lookup=explicit_lookup),
+            "runtime_gate": self._moment_runtime_gate_payload(
+                moment,
+                explicit_lookup=explicit_lookup,
+                query=query,
+            ),
         }
         if include_text:
             payload["text_preview"] = self._moment_text(moment, 180)
@@ -4095,16 +4177,29 @@ class GatewayService:
             "diffused_bucket_ids": diffused_bucket_ids,
             "recalled_moment_ids": recalled_moment_ids,
             "recalled_moment_debug": [
-                self._format_moment_debug(moment, explicit_lookup=explicit_lookup)
+                self._format_moment_debug(
+                    moment,
+                    explicit_lookup=explicit_lookup,
+                    query=query,
+                )
                 for moment in recalled_moments[:20]
             ],
             "diffused_moment_ids": self._extract_moment_ids_from_context(related_memory),
             "suppressed_bucket_candidates": [
-                self._format_suppressed_bucket_debug(item, explicit_lookup=explicit_lookup)
+                self._format_suppressed_bucket_debug(
+                    item,
+                    explicit_lookup=explicit_lookup,
+                    query=query,
+                )
                 for item in (suppressed_buckets or [])[:20]
             ],
             "suppressed_candidates": [
-                self._format_moment_debug(moment, explicit_lookup=explicit_lookup, include_text=True)
+                self._format_moment_debug(
+                    moment,
+                    explicit_lookup=explicit_lookup,
+                    include_text=True,
+                    query=query,
+                )
                 for moment in (suppressed_moments or [])[:20]
             ],
             "context_mode": context_mode,
