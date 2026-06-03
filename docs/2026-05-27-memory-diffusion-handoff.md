@@ -767,31 +767,28 @@ python scripts/build_moment_graph.py --incremental
 
 ### 2. Typed edge + path scoring
 
-下一步边类型可以更细：
+第一版已完成，当前不是空 TODO。新增提交：
 
 ```text
-same_topic
-cause
-followup
-embodiment_chain
-emotional_echo
-conflict
-old_version
-evidenced_by
+442fd72 Add typed relation scoring for moment diffusion
+034bc2e Tighten typed relation marker detection
+08c8c2b Prefer old-version relation for digested graph moments
 ```
 
-召回分数可以按：
+已实现：
 
-```text
-seed_score * edge_confidence * hop_decay * query_overlap * section_weight
-```
+- `memory_diffusion.py` 支持 `same_topic / cause / followup / embodiment_chain / conflict / old_version` 等 relation weights。
+- `old_version` 和 `conflict` 默认降权；query 明确问旧版/冲突时，旧路径和冲突路径会被放开排序。
+- `path_has_old_version()` 单独区分旧路径，Gateway / breath 不再把旧路径当普通背景。
+- chain walk 不继续穿过 `old_version / conflict / contradicts / blocks`。
+- worker 建边会从 section、facet、metadata 和强 marker 推断更细 relation type；`digested/resolved/archive` 优先归为 `old_version`。
 
-规则：
+已验证：
 
-- 每多一跳降权。
-- resolved / old_version / conflict 默认降权。
-- query 明确问“旧版/冲突/之前”时再放开。
-- NSFW 或敏感簇除非 query 明确相关，否则压住。
+- 本地 `python -m pytest tests -q`：425 passed, 7 skipped。
+- VPS 已部署到 `08c8c2b`，memory/gateway health 均 ok。
+- VPS dry-run：160 buckets、276 moments、候选 12、写入 0；relation_counts 为 `old_version: 6`、`same_topic: 2`、`context_of: 4`。
+- dry-run 后 DB 仍是 12 条 `local_graph:`，没有写库。
 
 ### 3. source_ref / transcript 行号
 
