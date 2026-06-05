@@ -6328,6 +6328,13 @@ async def api_config_get(request):
             "current_inner_state_interval_rounds": gateway_cfg.get("current_inner_state_interval_rounds", 15),
             "direct_render_mode": _normalize_direct_render_mode(gateway_cfg.get("direct_render_mode", "auto")),
             "retrieval_mode": _normalize_retrieval_mode(gateway_cfg.get("retrieval_mode", "graph")),
+            "portrait_memory_enabled": _bool_value(gateway_cfg.get("portrait_memory_enabled"), False),
+            "portrait_memory_budget": gateway_cfg.get("portrait_memory_budget", 360),
+            "portrait_memory_max_sources": gateway_cfg.get("portrait_memory_max_sources", 8),
+            "portrait_memory_include_anchors": _bool_value(
+                gateway_cfg.get("portrait_memory_include_anchors"),
+                True,
+            ),
             "query_planner_enabled": _bool_value(gateway_cfg.get("query_planner_enabled"), False),
             "query_planner_model": gateway_cfg.get("query_planner_model", ""),
             "query_planner_min_chars": gateway_cfg.get("query_planner_min_chars", 40),
@@ -6592,6 +6599,27 @@ async def api_config_update(request):
             gateway_cfg["retrieval_mode"] = _normalize_retrieval_mode(g["retrieval_mode"])
             gateway_hot_update_body["retrieval_mode"] = gateway_cfg["retrieval_mode"]
             updated.append("gateway.retrieval_mode")
+        if "portrait_memory_enabled" in g:
+            gateway_cfg["portrait_memory_enabled"] = _bool_value(g["portrait_memory_enabled"], False)
+            gateway_hot_update_body["portrait_memory_enabled"] = gateway_cfg["portrait_memory_enabled"]
+            updated.append("gateway.portrait_memory_enabled")
+        if "portrait_memory_budget" in g:
+            gateway_cfg["portrait_memory_budget"] = _int_between(g["portrait_memory_budget"], 360, 120, 2000)
+            gateway_hot_update_body["portrait_memory_budget"] = gateway_cfg["portrait_memory_budget"]
+            updated.append("gateway.portrait_memory_budget")
+        if "portrait_memory_max_sources" in g:
+            gateway_cfg["portrait_memory_max_sources"] = _int_between(g["portrait_memory_max_sources"], 8, 1, 20)
+            gateway_hot_update_body["portrait_memory_max_sources"] = gateway_cfg["portrait_memory_max_sources"]
+            updated.append("gateway.portrait_memory_max_sources")
+        if "portrait_memory_include_anchors" in g:
+            gateway_cfg["portrait_memory_include_anchors"] = _bool_value(
+                g["portrait_memory_include_anchors"],
+                True,
+            )
+            gateway_hot_update_body["portrait_memory_include_anchors"] = gateway_cfg[
+                "portrait_memory_include_anchors"
+            ]
+            updated.append("gateway.portrait_memory_include_anchors")
         if "query_planner_enabled" in g:
             gateway_cfg["query_planner_enabled"] = _bool_value(g["query_planner_enabled"], False)
             gateway_hot_update_body["query_planner_enabled"] = gateway_cfg["query_planner_enabled"]
@@ -6808,6 +6836,30 @@ async def api_config_update(request):
                     sc_gateway["direct_render_mode"] = _normalize_direct_render_mode(body["gateway"]["direct_render_mode"])
                 if "retrieval_mode" in body["gateway"]:
                     sc_gateway["retrieval_mode"] = _normalize_retrieval_mode(body["gateway"]["retrieval_mode"])
+                if "portrait_memory_enabled" in body["gateway"]:
+                    sc_gateway["portrait_memory_enabled"] = _bool_value(
+                        body["gateway"]["portrait_memory_enabled"],
+                        False,
+                    )
+                if "portrait_memory_budget" in body["gateway"]:
+                    sc_gateway["portrait_memory_budget"] = _int_between(
+                        body["gateway"]["portrait_memory_budget"],
+                        360,
+                        120,
+                        2000,
+                    )
+                if "portrait_memory_max_sources" in body["gateway"]:
+                    sc_gateway["portrait_memory_max_sources"] = _int_between(
+                        body["gateway"]["portrait_memory_max_sources"],
+                        8,
+                        1,
+                        20,
+                    )
+                if "portrait_memory_include_anchors" in body["gateway"]:
+                    sc_gateway["portrait_memory_include_anchors"] = _bool_value(
+                        body["gateway"]["portrait_memory_include_anchors"],
+                        True,
+                    )
                 if "query_planner_enabled" in body["gateway"]:
                     sc_gateway["query_planner_enabled"] = _bool_value(
                         body["gateway"]["query_planner_enabled"],

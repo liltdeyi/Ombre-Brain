@@ -2001,6 +2001,10 @@ async def test_config_get_reports_gateway_recall_modes(monkeypatch):
                 "current_inner_state_interval_rounds": 11,
                 "direct_render_mode": "full",
                 "retrieval_mode": "bucket",
+                "portrait_memory_enabled": True,
+                "portrait_memory_budget": 280,
+                "portrait_memory_max_sources": 4,
+                "portrait_memory_include_anchors": False,
                 "query_planner_enabled": True,
                 "query_planner_model": "planner-mini",
                 "query_planner_min_chars": 24,
@@ -2026,6 +2030,10 @@ async def test_config_get_reports_gateway_recall_modes(monkeypatch):
     assert payload["gateway"]["current_inner_state_interval_rounds"] == 11
     assert payload["gateway"]["direct_render_mode"] == "full"
     assert payload["gateway"]["retrieval_mode"] == "bucket"
+    assert payload["gateway"]["portrait_memory_enabled"] is True
+    assert payload["gateway"]["portrait_memory_budget"] == 280
+    assert payload["gateway"]["portrait_memory_max_sources"] == 4
+    assert payload["gateway"]["portrait_memory_include_anchors"] is False
     assert payload["gateway"]["query_planner_enabled"] is True
     assert payload["gateway"]["query_planner_model"] == "planner-mini"
     assert payload["gateway"]["query_planner_min_chars"] == 24
@@ -2308,6 +2316,10 @@ async def test_config_persist_syncs_existing_runtime_yaml(monkeypatch, test_conf
                     "current_inner_state_interval_rounds": 9,
                     "direct_render_mode": "full",
                     "retrieval_mode": "bucket",
+                    "portrait_memory_enabled": True,
+                    "portrait_memory_budget": 280,
+                    "portrait_memory_max_sources": 4,
+                    "portrait_memory_include_anchors": False,
                     "query_planner_enabled": True,
                     "query_planner_model": "planner-mini",
                     "query_planner_min_chars": 24,
@@ -2363,6 +2375,10 @@ async def test_config_persist_syncs_existing_runtime_yaml(monkeypatch, test_conf
     assert runtime_config["gateway"]["current_inner_state_interval_rounds"] == 9
     assert runtime_config["gateway"]["direct_render_mode"] == "full"
     assert runtime_config["gateway"]["retrieval_mode"] == "bucket"
+    assert runtime_config["gateway"]["portrait_memory_enabled"] is True
+    assert runtime_config["gateway"]["portrait_memory_budget"] == 280
+    assert runtime_config["gateway"]["portrait_memory_max_sources"] == 4
+    assert runtime_config["gateway"]["portrait_memory_include_anchors"] is False
     assert runtime_config["gateway"]["query_planner_enabled"] is True
     assert runtime_config["gateway"]["query_planner_model"] == "planner-mini"
     assert runtime_config["gateway"]["query_planner_min_chars"] == 24
@@ -2384,6 +2400,10 @@ async def test_config_persist_syncs_existing_runtime_yaml(monkeypatch, test_conf
             "current_inner_state_interval_rounds": 9,
             "direct_render_mode": "full",
             "retrieval_mode": "bucket",
+            "portrait_memory_enabled": True,
+            "portrait_memory_budget": 280,
+            "portrait_memory_max_sources": 4,
+            "portrait_memory_include_anchors": False,
             "query_planner_enabled": True,
             "query_planner_model": "planner-mini",
             "query_planner_min_chars": 24,

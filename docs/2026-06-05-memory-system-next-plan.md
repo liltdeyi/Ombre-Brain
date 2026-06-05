@@ -164,6 +164,18 @@ Non-goals:
 
 ### 5. Add read-only Portrait Memory cache
 
+First implementation: done.
+
+Implementation notes:
+
+- Gateway supports `portrait_memory_enabled`, disabled by default.
+- Source set is deterministic and read-only: `profile_fact` buckets plus selected `anchor` buckets.
+- `pinned`, `protected`, ordinary `permanent`, resolved/digested/deprecated, and ordinary dynamic recall buckets are excluded by default.
+- The cache key uses source bucket ids, source `updated_at`, source content hash, and relevant portrait config.
+- Cache output is deterministic, not LLM-generated, so unchanged sources reuse the cached block without another model call.
+- Portrait Memory is injected in stable system context as a separate `Portrait Memory` block, not inside `Core Memory`.
+- Debug payload reports cache hit/miss, source ids, source roles, source hash, token estimate, and version.
+
 First version source set:
 
 - `profile_fact`

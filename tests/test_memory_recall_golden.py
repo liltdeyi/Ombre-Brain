@@ -199,6 +199,7 @@ def _run_gateway_recall_case(cfg: dict, bucket_mgr: BucketManager, case: dict[st
     _, dynamic_context = service._build_injected_context_messages(
         persona_block="",
         core_memory="",
+        portrait_memory="",
         recent_context="",
         recalled_memory=recalled_memory,
         relationship_weather="",
@@ -224,6 +225,7 @@ def _run_diffused_block_case(cfg: dict, bucket_mgr: BucketManager, case: dict[st
     _, dynamic_context = service._build_injected_context_messages(
         persona_block="",
         core_memory="",
+        portrait_memory="",
         recent_context="",
         recalled_memory="",
         relationship_weather="",

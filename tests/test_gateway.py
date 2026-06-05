@@ -378,6 +378,10 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
         current_inner_state_interval_rounds=15,
         direct_render_mode="auto",
         retrieval_mode="graph",
+        portrait_memory_enabled=False,
+        portrait_memory_budget=360,
+        portrait_memory_max_sources=8,
+        portrait_memory_include_anchors=True,
         query_planner_enabled=False,
         query_planner_model="",
         query_planner_min_chars=40,
@@ -406,6 +410,10 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
                     "current_inner_state_interval_rounds": 9,
                     "direct_render_mode": "full",
                     "retrieval_mode": "bucket",
+                    "portrait_memory_enabled": True,
+                    "portrait_memory_budget": 280,
+                    "portrait_memory_max_sources": 4,
+                    "portrait_memory_include_anchors": False,
                     "query_planner_enabled": True,
                     "query_planner_model": "planner-mini",
                     "query_planner_min_chars": 24,
@@ -437,6 +445,10 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
         "gateway.current_inner_state_interval_rounds",
         "gateway.direct_render_mode",
         "gateway.retrieval_mode",
+        "gateway.portrait_memory_enabled",
+        "gateway.portrait_memory_budget",
+        "gateway.portrait_memory_max_sources",
+        "gateway.portrait_memory_include_anchors",
         "gateway.query_planner_enabled",
         "gateway.query_planner_model",
         "gateway.query_planner_min_chars",
@@ -461,6 +473,10 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
     assert service.current_inner_state_interval_rounds == 9
     assert service.direct_render_mode == "full"
     assert service.retrieval_mode == "bucket"
+    assert service.portrait_memory_enabled is True
+    assert service.portrait_memory_budget == 280
+    assert service.portrait_memory_max_sources == 4
+    assert service.portrait_memory_include_anchors is False
     assert service.query_planner_enabled is True
     assert service.query_planner_model == "planner-mini"
     assert service.query_planner_min_chars == 24
@@ -476,6 +492,10 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
     assert service.diffusion_options.chain_min_confidence == pytest.approx(0.76)
     assert response.json()["gateway"]["direct_render_mode"] == "full"
     assert response.json()["gateway"]["retrieval_mode"] == "bucket"
+    assert response.json()["gateway"]["portrait_memory_enabled"] is True
+    assert response.json()["gateway"]["portrait_memory_budget"] == 280
+    assert response.json()["gateway"]["portrait_memory_max_sources"] == 4
+    assert response.json()["gateway"]["portrait_memory_include_anchors"] is False
     assert response.json()["gateway"]["memory_detail_recall_enabled"] is True
     assert response.json()["gateway"]["memory_detail_recall_max_ids"] == 2
     assert response.json()["gateway"]["memory_detail_recall_budget"] == 900
@@ -2335,6 +2355,150 @@ def test_gateway_injects_after_existing_system_message(monkeypatch, test_config,
     assert "新猫粮" in dynamic
     assert "已解决论文" not in dynamic
     assert state_store.get_recent_bucket_ids("sess-inject", 5) == {cat_a}
+
+
+def test_gateway_portrait_memory_uses_profile_fact_and_anchor_only(monkeypatch, test_config, bucket_mgr):
+    profile_id = _create_bucket(
+        bucket_mgr,
+        content="小雨喜欢低噪音协作，不喜欢装腔作势的 AI 黑话。",
+        name="协作偏好",
+        tags=["profile_fact", "profile_preference"],
+        hours_ago=48,
+        confidence=0.92,
+        evidence_bucket_id="evidence-profile",
+    )
+    anchor_id = _create_bucket(
+        bucket_mgr,
+        content="小雨和 Haven 把记忆系统边界定为：根设定不自动维护，画像事实必须有证据。",
+        name="记忆系统边界",
+        hours_ago=72,
+        importance=9,
+        anchor=True,
+    )
+    _create_bucket(
+        bucket_mgr,
+        content="普通 permanent 不应该进 Portrait Memory。",
+        name="普通长期记忆",
+        hours_ago=96,
+        bucket_type="permanent",
+    )
+    _create_bucket(
+        bucket_mgr,
+        content="钉选根设定不应该被 Portrait Memory 复制。",
+        name="钉选根设定",
+        tags=["profile_fact"],
+        hours_ago=96,
+        bucket_type="permanent",
+        pinned=True,
+    )
+    _create_bucket(
+        bucket_mgr,
+        content="普通动态记忆不应该进 Portrait Memory。",
+        name="普通动态",
+        hours_ago=12,
+    )
+
+    app, _, _, captured = _build_service(
+        monkeypatch,
+        _gateway_config(
+            test_config,
+            portrait_memory_enabled=True,
+            portrait_memory_budget=420,
+            portrait_memory_max_sources=6,
+            portrait_memory_include_anchors=True,
+            current_inner_state_interval_rounds=0,
+            core_memory_interval_rounds=0,
+            recent_context_budget=0,
+            recalled_memory_budget=0,
+            related_memory_budget=0,
+        ),
+        bucket_mgr,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": "Bearer gateway-secret",
+                "X-Ombre-Session-Id": "sess-portrait",
+            },
+            json={"messages": [{"role": "user", "content": "今天继续做记忆系统。"}]},
+        )
+        debug_response = client.get(
+            "/api/debug/injections?session_id=sess-portrait&include_context=0",
+            headers={"Authorization": "Bearer gateway-secret"},
+        )
+
+    assert response.status_code == 200
+    messages = captured[0]["json"]["messages"]
+    assert messages[0]["role"] == "system"
+    stable = messages[0]["content"]
+    assert "Portrait Memory" in stable
+    assert "\nCore Memory\n" not in stable
+    assert "低噪音协作" in stable
+    assert "记忆系统边界" in stable
+    assert profile_id in stable
+    assert anchor_id in stable
+    assert "普通 permanent 不应该进" not in stable
+    assert "钉选根设定不应该" not in stable
+    assert "普通动态记忆不应该" not in stable
+
+    payload = debug_response.json()["items"][0]["payload"]
+    portrait_debug = payload["portrait_memory_debug"]
+    assert payload["portrait_memory_injected"] is True
+    assert portrait_debug["enabled"] is True
+    assert portrait_debug["cache_hit"] is False
+    assert portrait_debug["source_count"] == 2
+    assert set(portrait_debug["source_ids"]) == {profile_id, anchor_id}
+    assert portrait_debug["generated_portrait_version"] == "portrait-v1-deterministic"
+    assert portrait_debug["token_estimate"] > 0
+
+
+def test_gateway_portrait_memory_reuses_cache_when_sources_unchanged(monkeypatch, test_config, bucket_mgr):
+    _create_bucket(
+        bucket_mgr,
+        content="小雨更喜欢先讲边界，再做最小实现。",
+        name="工程偏好",
+        tags=["profile_fact"],
+        hours_ago=24,
+        confidence=0.9,
+    )
+
+    app, _, _, _ = _build_service(
+        monkeypatch,
+        _gateway_config(
+            test_config,
+            portrait_memory_enabled=True,
+            current_inner_state_interval_rounds=0,
+            recent_context_budget=0,
+            recalled_memory_budget=0,
+            related_memory_budget=0,
+        ),
+        bucket_mgr,
+    )
+
+    with TestClient(app) as client:
+        for index in range(2):
+            response = client.post(
+                "/v1/chat/completions",
+                headers={
+                    "Authorization": "Bearer gateway-secret",
+                    "X-Ombre-Session-Id": "sess-portrait-cache",
+                },
+                json={"messages": [{"role": "user", "content": f"继续测试画像缓存 {index}"}]},
+            )
+            assert response.status_code == 200
+
+        debug_response = client.get(
+            "/api/debug/injections?session_id=sess-portrait-cache&include_context=0",
+            headers={"Authorization": "Bearer gateway-secret"},
+        )
+
+    latest_payload = debug_response.json()["items"][0]["payload"]
+    previous_payload = debug_response.json()["items"][1]["payload"]
+    assert latest_payload["portrait_memory_debug"]["cache_hit"] is True
+    assert previous_payload["portrait_memory_debug"]["cache_hit"] is False
+    assert latest_payload["portrait_memory_debug"]["source_hash"] == previous_payload["portrait_memory_debug"]["source_hash"]
 
 
 def test_gateway_accepts_timezone_aware_bucket_timestamps(monkeypatch, test_config, bucket_mgr):

@@ -1035,6 +1035,7 @@ async def test_gateway_builds_favorite_memory_block_and_injects_section(test_con
     _stable, dynamic = service._build_injected_context_messages(
         persona_block="Long-term State Summary",
         core_memory="",
+        portrait_memory="",
         relationship_weather="",
         favorite_memory=block,
         recent_context="",
