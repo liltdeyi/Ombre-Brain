@@ -164,6 +164,28 @@ def test_legacy_favorite_reason_heading_and_unheaded_body_are_migrated():
     assert "> Dm9 -> G13sus4 -> Cmaj9 -> Am add9 · 60bpm · mp" in plan.kept_affect_anchor
 
 
+def test_converted_unheaded_body_merges_with_existing_moment_section():
+    bucket = _bucket(
+        "\n".join(
+            [
+                "小雨先讲了一个旧事件。",
+                "",
+                "### moment",
+                "已经存在的 moment。",
+                "",
+                "### affect_anchor",
+                "> Cmaj9 -> G/B -> Am add9 -> Fmaj9 · 58bpm · p",
+            ]
+        )
+    )
+
+    plan = plan_bucket_migration(bucket)
+
+    assert plan is not None
+    assert plan.new_content.count("### moment") == 1
+    assert "小雨先讲了一个旧事件。\n\n已经存在的 moment。" in plan.new_content
+
+
 def test_assistant_reflection_heading_indexes_as_reflection_moment():
     bucket = _bucket(
         "\n".join(

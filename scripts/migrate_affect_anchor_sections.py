@@ -245,6 +245,9 @@ def plan_bucket_migration(bucket: dict[str, Any]) -> AnchorMigration | None:
                 Section("### assistant_reflection", "assistant_reflection", paragraphs_to_lines(reflection_to_add)),
             )
 
+    if merge_repeated_sections(sections, {"moment", "assistant_reflection"}):
+        structural_changed = True
+
     new_content = render_sections(sections)
     if normalize_text(new_content) == normalize_text(content):
         return None
@@ -504,6 +507,26 @@ def append_paragraphs(section: Section, paragraphs: list[str]) -> None:
     if section.lines and section.lines[-1].strip():
         section.lines.append("")
     section.lines.extend(paragraphs_to_lines(paragraphs))
+
+
+def merge_repeated_sections(sections: list[Section], canonical_names: set[str]) -> bool:
+    first_by_canonical: dict[str, Section] = {}
+    remove_indexes: set[int] = set()
+    for index, section in enumerate(sections):
+        canonical = section.canonical
+        if canonical not in canonical_names:
+            continue
+        if canonical not in first_by_canonical:
+            first_by_canonical[canonical] = section
+            continue
+        text = section.text()
+        if text:
+            append_paragraphs(first_by_canonical[canonical], [text])
+        remove_indexes.add(index)
+    if not remove_indexes:
+        return False
+    sections[:] = [section for index, section in enumerate(sections) if index not in remove_indexes]
+    return True
 
 
 async def build_plan(mgr: BucketManager, *, include_archive: bool = False, bucket_ids: set[str] | None = None) -> list[AnchorMigration]:
