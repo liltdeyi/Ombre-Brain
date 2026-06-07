@@ -622,7 +622,7 @@ class DailyPortraitMaintainer:
             scope_state = portrait.get(scope, {}) if isinstance(portrait.get(scope), dict) else {}
             for row in scope_state.get("recent_buffer", []) or []:
                 rows.append((str(row.get("updated_at") or ""), scope, row))
-        rows.sort(reverse=True)
+        rows.sort(key=lambda item: (item[0], item[1]), reverse=True)
         for _updated, scope, row in rows[:max_items]:
             evidence = self._format_evidence(row.get("evidence", []))
             lines.append(f"- {scope}: {self._clip(row.get('text', ''), 140)}" + (f" ({evidence})" if evidence else ""))

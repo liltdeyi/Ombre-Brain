@@ -182,3 +182,38 @@ def test_portrait_mid_term_rewrite_requires_staging_evidence(tmp_path, test_conf
     assert rejected == []
     assert normalized["move_to_staging"][0]["evidence"] == [{"bucket_id": "fresh-bucket"}]
     assert normalized["rewrite_mid_term"][0]["evidence"] == [{"bucket_id": "fresh-bucket"}]
+
+
+def test_handoff_recent_continuity_sorts_equal_timestamps_without_dict_compare(tmp_path, test_config):
+    state_path = tmp_path / "state" / "portrait_state.json"
+    engine = DailyPortraitMaintainer(
+        {
+            **test_config,
+            "portrait": {
+                "enabled": True,
+                "state_path": str(state_path),
+            },
+        }
+    )
+    state = engine._empty_state()
+    same_time = "2026-06-07T01:25:42+00:00"
+    state["portrait"]["user"]["recent_buffer"].append(
+        {
+            "text": "小雨最近在调整换窗 handoff。",
+            "evidence": [{"bucket_id": "u"}],
+            "updated_at": same_time,
+        }
+    )
+    state["portrait"]["relationship"]["recent_buffer"].append(
+        {
+            "text": "关系画像要优先于旧记忆堆。",
+            "evidence": [{"bucket_id": "r"}],
+            "updated_at": same_time,
+        }
+    )
+    engine.save_state(state)
+
+    sections = engine.build_handoff_sections(max_recent_items=4)
+
+    assert "小雨最近在调整换窗 handoff" in sections["recent_continuity"]
+    assert "关系画像要优先于旧记忆堆" in sections["recent_continuity"]
