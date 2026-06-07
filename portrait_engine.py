@@ -61,6 +61,7 @@ PORTRAIT_PROMPT_TEMPLATE = """你是 {ai_name}，正在维护你和 {user_displa
 - 不要滥用“{user_display_name}喜欢...”。只有证据明确表达稳定偏好、反复选择或清楚的喜欢时才写 user 偏好；关系天气、撒娇、确认、互动模式优先写 relationship。
 - initial_run=true 时，add_recent 只放真正短期/当天观察；高置信、能跨窗口携带的观察应放入 move_to_staging。每个 scope 尽量给 1-3 条 move_to_staging，除非证据不足。
 - rewrite_mid_term 可综合 staging_pool 或本次 move_to_staging；初次初始化时，如果本次 move_to_staging 已足够支撑，可以写一条谨慎的 mid_term。
+- 输出要克制：daily_summary 最多60字，add_recent 最多4条，move_to_staging 最多8条，rewrite_mid_term 最多3条，每条 text 最多70字。
 - profile_fact_candidate 只提候选，不确认、不写入长期 profile_fact。
 - stable_candidate 只提候选，不直接覆盖 stable portrait。
 - rewrite_mid_term 只能综合 staging_pool 里的观察，或本次明确 move_to_staging 的观察；不要直接把当天新材料写成 mid_term。
@@ -375,7 +376,7 @@ class DailyPortraitMaintainer:
         move_to_staging = []
         for bucket in materials.get("buckets", [])[:8]:
             scope = self._fallback_scope(bucket)
-            text = self._clip(bucket.get("text", ""), 180)
+            text = self._fallback_text(bucket, scope)
             bucket_id = str(bucket.get("bucket_id") or "")
             if not scope or not text or not bucket_id:
                 continue
@@ -385,7 +386,7 @@ class DailyPortraitMaintainer:
                 "evidence": [{"bucket_id": bucket_id}],
                 "confidence": float(bucket.get("confidence") or 0.55),
             }
-            if initial:
+            if initial and self._fallback_initial_staging(bucket):
                 move_to_staging.append(row)
             else:
                 add_recent.append(row)
@@ -746,6 +747,47 @@ class DailyPortraitMaintainer:
             return "relationship"
         return ""
 
+    def _fallback_initial_staging(self, bucket_payload: dict) -> bool:
+        tags = {str(tag).lower() for tag in bucket_payload.get("tags", []) or []}
+        if tags & {"relationship_weather", "daily_impression", "weekly_impression"}:
+            return False
+        name = str(bucket_payload.get("name") or "")
+        if re.search(r"\d{4}-\d{2}-\d{2}\s*(日印象|周印象)", name):
+            return False
+        return True
+
+    def _fallback_text(self, bucket_payload: dict, scope: str) -> str:
+        sections = bucket_payload.get("key_sections", []) if isinstance(bucket_payload, dict) else []
+
+        def first_section(*names: str) -> str:
+            wanted = {name.lower() for name in names}
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                if str(section.get("heading") or "").strip().lower() in wanted:
+                    text = str(section.get("text") or "").strip()
+                    if text:
+                        return text
+            return ""
+
+        if scope == "persona":
+            text = first_section("reflection", "assistant_reflection", "moment", "fact")
+        elif scope == "user":
+            text = first_section("fact", "moment")
+        else:
+            text = first_section("moment", "fact", "reflection", "assistant_reflection")
+        if not text:
+            text = str(bucket_payload.get("source_excerpt") or bucket_payload.get("text") or "")
+        return self._clean_fallback_text(text)
+
+    def _clean_fallback_text(self, text: str) -> str:
+        text = strip_wikilinks(str(text or ""))
+        text = re.sub(r"^Title:\s*.*?\bContent:\s*", "", text, flags=re.DOTALL)
+        text = re.split(r"\s*###\s+affect_anchor\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+        text = re.sub(r"###\s+[\w\u4e00-\u9fff_ -]+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip(" ：:;；。")
+        return self._clip(text, 140)
+
     def _portrait_snapshot(self, state: dict) -> dict:
         portrait = state.get("portrait", {}) if isinstance(state.get("portrait"), dict) else {}
         return {
@@ -799,7 +841,7 @@ class DailyPortraitMaintainer:
                 session_ids.add(session_id)
 
     def _extract_key_sections(self, content: str) -> list[dict]:
-        wanted = {"moment", "reflection", "assistant_reflection"}
+        wanted = {"moment", "reflection", "assistant_reflection", "fact"}
         sections = []
         current_title = ""
         current_lines: list[str] = []
