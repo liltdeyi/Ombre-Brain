@@ -85,6 +85,38 @@ DEFAULT_WORD_MAP_STOPWORDS = {
 }
 
 DEFAULT_STOPWORD_PREFIXES = ("flavor_", "profile_", "predicate_", "task_")
+DEFAULT_WORD_MAP_OVERVIEW_STOPWORDS = {
+    "ai",
+    "boundary_setting",
+    "bucket_original",
+    "communication_preference",
+    "diary_extract",
+    "from_diary",
+    "interaction_pattern",
+    "profile_preference",
+    "两人",
+    "主动",
+    "亲密",
+    "亲密互动",
+    "人际",
+    "关系",
+    "关系天气",
+    "内心",
+    "兴趣",
+    "回应",
+    "成长",
+    "恋爱",
+    "情感表达",
+    "情绪",
+    "承诺",
+    "数字",
+    "日印象",
+    "日常",
+    "社交",
+    "编程",
+    "自省",
+}
+DEFAULT_OVERVIEW_STOPWORD_PREFIXES = DEFAULT_STOPWORD_PREFIXES
 DEFAULT_WEAK_HINT_TERMS = {
     "人机恋",
     "恋爱",
@@ -129,6 +161,22 @@ class WordMapStore:
         self.stopword_prefixes = tuple(
             str(item).strip().lower()
             for item in itertools.chain(DEFAULT_STOPWORD_PREFIXES, cfg.get("stopword_prefixes", []) or [])
+            if str(item).strip()
+        )
+        self.overview_stopwords = {
+            _normalize_term(item)
+            for item in itertools.chain(
+                DEFAULT_WORD_MAP_OVERVIEW_STOPWORDS,
+                cfg.get("overview_stopwords", []) or [],
+            )
+            if _normalize_term(item)
+        }
+        self.overview_stopword_prefixes = tuple(
+            str(item).strip().lower()
+            for item in itertools.chain(
+                DEFAULT_OVERVIEW_STOPWORD_PREFIXES,
+                cfg.get("overview_stopword_prefixes", []) or [],
+            )
             if str(item).strip()
         )
         self.weak_hint_terms = {
@@ -253,6 +301,7 @@ class WordMapStore:
         return sorted(terms.values(), key=lambda item: (-item.weight, item.term))[: self.max_terms_per_bucket]
 
     def list_nodes(self, limit: int = 50) -> list[dict[str, Any]]:
+        limit = _int_between(limit, 50, 1, 500)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -262,13 +311,22 @@ class WordMapStore:
                 ORDER BY bucket_count DESC, weight DESC, term ASC
                 LIMIT ?
                 """,
-                (_int_between(limit, 50, 1, 500),),
+                (min(5000, max(limit * 20, limit)),),
             ).fetchall()
-            return [dict(row) for row in rows]
+            output = []
+            for row in rows:
+                item = dict(row)
+                if self._is_overview_term_hidden(item.get("term")):
+                    continue
+                output.append(item)
+                if len(output) >= limit:
+                    break
+            return output
         finally:
             conn.close()
 
     def list_edges(self, limit: int = 50) -> list[dict[str, Any]]:
+        limit = _int_between(limit, 50, 1, 500)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -280,9 +338,19 @@ class WordMapStore:
                 ORDER BY bucket_count DESC, weight DESC, term_a ASC, term_b ASC
                 LIMIT ?
                 """,
-                (_int_between(limit, 50, 1, 500),),
+                (min(5000, max(limit * 30, limit)),),
             ).fetchall()
-            return [dict(row) for row in rows]
+            output = []
+            for row in rows:
+                item = dict(row)
+                if self._is_overview_term_hidden(item.get("term_a")):
+                    continue
+                if self._is_overview_term_hidden(item.get("term_b")):
+                    continue
+                output.append(item)
+                if len(output) >= limit:
+                    break
+            return output
         finally:
             conn.close()
 
@@ -541,6 +609,18 @@ class WordMapStore:
         if term in self.weak_hint_terms:
             return self.weak_hint_weight
         return 1.0
+
+    def _is_overview_term_hidden(self, value: Any) -> bool:
+        term = _normalize_term(value)
+        if not term:
+            return True
+        if term in self.stopwords or term in self.private_terms or term in self.overview_stopwords:
+            return True
+        if any(term.startswith(prefix) for prefix in self.stopword_prefixes):
+            return True
+        if any(term.startswith(prefix) for prefix in self.overview_stopword_prefixes):
+            return True
+        return False
 
 
 def _bucket_text(bucket: dict[str, Any]) -> str:

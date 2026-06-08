@@ -144,6 +144,56 @@ def test_word_map_single_character_noise_does_not_block_specific_term(tmp_path):
     assert hints["evidence"]["narcissus"]["direct_terms"] == ["水仙"]
 
 
+def test_word_map_overview_hides_meta_and_broad_terms_without_hiding_cards(tmp_path):
+    store = WordMapStore(_config(tmp_path))
+    store.rebuild(
+        [
+            _bucket(
+                "memory",
+                "记忆不是表演，答对不等于回来。流星会变，但连续性痛感还在。",
+                name="记忆不是表演",
+                tags=["relationship_event", "emotional_echo", "wish", "interaction_pattern"],
+                keywords=["流星", "连续性痛感"],
+                domain=["恋爱", "内心"],
+            ),
+            _bucket(
+                "darkroom",
+                "暗房 Darkroom 上线，Dashboard 只显示门口状态。",
+                name="暗房机制上线",
+                tags=["project_event", "commitment"],
+                keywords=["暗房", "Darkroom", "Dashboard"],
+                domain=["AI", "编程"],
+            ),
+            _bucket(
+                "daily",
+                "日印象记录关系天气。",
+                name="2026-06-08 日印象",
+                tags=["daily_impression", "relationship_weather"],
+                keywords=["关系天气", "日印象"],
+                domain=["自省", "恋爱"],
+            ),
+        ]
+    )
+
+    overview_terms = {node["term"] for node in store.list_nodes(50)}
+    assert "恋爱" not in overview_terms
+    assert "内心" not in overview_terms
+    assert "wish" not in overview_terms
+    assert "interaction_pattern" not in overview_terms
+    assert "日印象" not in overview_terms
+    assert "暗房" in overview_terms
+    assert "流星" in overview_terms
+
+    overview_edge_terms = {
+        term
+        for edge in store.list_edges(50)
+        for term in (edge["term_a"], edge["term_b"])
+    }
+    assert "恋爱" not in overview_edge_terms
+    assert "日印象" not in overview_edge_terms
+    assert store.cards_for_term("恋爱")
+
+
 def test_word_map_private_terms_are_excluded(tmp_path):
     store = WordMapStore(_config(tmp_path, private_terms=["专属称呼"]))
     store.rebuild(
@@ -222,6 +272,8 @@ def test_config_example_exposes_empty_word_map_and_identity_semantics():
 
     assert config["word_map"]["enabled"] is False
     assert config["word_map"]["private_terms"] == []
+    assert config["word_map"]["overview_stopwords"] == []
+    assert config["word_map"]["overview_stopword_prefixes"] == []
     assert config["word_map"]["weak_hint_terms"] == []
     assert config["word_map"]["weak_hint_weight"] == 0.25
     assert config["identity_semantics"]["enabled"] is False
