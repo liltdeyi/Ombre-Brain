@@ -490,7 +490,7 @@ class WordMapStore:
                     str(item.get("term_b") or ""),
                 )
             )
-            return output[:limit]
+            return self._diversify_overview_edges(output, limit)
         finally:
             conn.close()
 
@@ -951,6 +951,42 @@ class WordMapStore:
         if hub_count == 2:
             return 0.72
         return 1.0
+
+    def _diversify_overview_edges(self, edges: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        remaining = [dict(edge) for edge in edges]
+        selected: list[dict[str, Any]] = []
+        term_counts: dict[str, int] = {}
+        while remaining and len(selected) < limit:
+            best_index = max(
+                range(len(remaining)),
+                key=lambda index: (
+                    self._overview_edge_display_score(remaining[index], term_counts),
+                    float(remaining[index].get("overview_score") or 0.0),
+                    float(remaining[index].get("weight") or 0.0),
+                    str(remaining[index].get("term_a") or ""),
+                    str(remaining[index].get("term_b") or ""),
+                ),
+            )
+            edge = remaining.pop(best_index)
+            edge["overview_score"] = round(self._overview_edge_display_score(edge, term_counts), 4)
+            selected.append(edge)
+            for term in (str(edge.get("term_a") or ""), str(edge.get("term_b") or "")):
+                term_counts[term] = term_counts.get(term, 0) + 1
+        return selected
+
+    def _overview_edge_display_score(self, edge: dict[str, Any], term_counts: dict[str, int]) -> float:
+        score = float(edge.get("overview_score") or 0.0)
+        terms = (str(edge.get("term_a") or ""), str(edge.get("term_b") or ""))
+        repeat_factor = 1.0
+        for term in terms:
+            repeat_factor *= self._overview_edge_repeat_factor(term_counts.get(term, 0))
+        return score * repeat_factor
+
+    @staticmethod
+    def _overview_edge_repeat_factor(selected_count: int) -> float:
+        if selected_count < 3:
+            return 1.0
+        return max(0.42, 1.0 / (1.0 + 0.42 * (selected_count - 2)))
 
     def _is_overview_hub_term(self, term: str) -> bool:
         return _normalize_term(term) in self.overview_hub_terms

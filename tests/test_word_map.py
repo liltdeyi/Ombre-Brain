@@ -265,6 +265,32 @@ def test_word_map_overview_saturates_hub_terms_and_boosts_non_hub_edges(tmp_path
     assert non_hub_score > hub_score
 
 
+def test_word_map_overview_edges_do_not_let_one_node_fill_the_top(tmp_path):
+    store = WordMapStore(_config(tmp_path))
+    edges = [
+        {
+            "term_a": "暗房",
+            "term_b": f"机制{index}",
+            "weight": 1.0,
+            "bucket_count": 1,
+            "overview_score": 10.0 - index * 0.3,
+        }
+        for index in range(8)
+    ]
+    edges.extend(
+        [
+            {"term_a": "梦境机制", "term_b": "recall_cues", "weight": 1.0, "bucket_count": 1, "overview_score": 7.7},
+            {"term_a": "折角", "term_b": "流星", "weight": 1.0, "bucket_count": 1, "overview_score": 7.2},
+        ]
+    )
+
+    selected = store._diversify_overview_edges(edges, 8)
+    first_six = selected[:6]
+
+    assert any("暗房" not in {edge["term_a"], edge["term_b"]} for edge in first_six)
+    assert sum("暗房" in {edge["term_a"], edge["term_b"]} for edge in first_six) < 6
+
+
 def test_word_map_private_terms_are_excluded(tmp_path):
     store = WordMapStore(_config(tmp_path, private_terms=["专属称呼"]))
     store.rebuild(
