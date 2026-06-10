@@ -5593,6 +5593,7 @@ class GatewayService:
             for moment in seed_moments
             if moment.get("bucket_id")
         }
+        moment_map = self._moment_diffusion_map(moments)
 
         for moment in self._secondary_direct_moments(
             query_text,
@@ -5606,6 +5607,7 @@ class GatewayService:
                 moment,
                 max_chars=related_max_chars,
                 note="related_query_hit",
+                moment_map=moment_map,
             )
             tokens = count_tokens_approx(block)
             if tokens > remaining and parts:
@@ -5622,6 +5624,7 @@ class GatewayService:
                     note="related_query_hit",
                     explicit_lookup=allow_archive_targets,
                     query=query_text,
+                    moment_map=moment_map,
                 )
             )
             remaining -= tokens
@@ -5645,7 +5648,6 @@ class GatewayService:
                     query_text,
                 )
             )
-        moment_map = self._moment_diffusion_map(moments)
         representatives = self._representative_moments_by_bucket(
             moments,
             explicit_lookup=allow_archive_targets,
@@ -6398,13 +6400,13 @@ class GatewayService:
             return ""
         if self._auto_query_too_vague(text):
             return ""
-        multi_topic = self._query_looks_multi_topic(text)
         compact_len = len(re.sub(r"\s+", "", text))
         long_enough = compact_len >= self.query_planner_min_chars
-        if multi_topic:
-            return "multi_topic"
         if not selected_items and self._query_looks_emotional_reason_lookup(text):
             return "emotional_reason_lookup"
+        multi_topic = self._query_looks_multi_topic(text)
+        if multi_topic:
+            return "multi_topic"
         if not selected_items and long_enough:
             return "direct_recall_empty_or_low_confidence"
         return ""
