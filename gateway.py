@@ -483,9 +483,10 @@ class GatewayService:
             self.gateway_cfg.get("query_planner_enabled"),
             False,
         )
-        self.query_planner_model = str(
-            self.gateway_cfg.get("query_planner_model") or self.upstream_default_model or ""
-        ).strip()
+        (
+            self.query_planner_model,
+            self.query_planner_uses_dehydrator,
+        ) = self._resolve_query_planner_model()
         self.query_planner_min_chars = max(0, int(self.gateway_cfg.get("query_planner_min_chars", 16)))
         self.query_planner_max_queries = max(1, min(3, int(self.gateway_cfg.get("query_planner_max_queries", 3))))
         self.query_planner_max_tokens = max(128, int(self.gateway_cfg.get("query_planner_max_tokens", 360)))
@@ -835,8 +836,12 @@ class GatewayService:
             self.gateway_cfg["query_planner_enabled"] = self.query_planner_enabled
             updated.append("gateway.query_planner_enabled")
         if "query_planner_model" in payload:
-            self.query_planner_model = str(payload["query_planner_model"] or "").strip()
-            self.gateway_cfg["query_planner_model"] = self.query_planner_model
+            configured_model = str(payload["query_planner_model"] or "").strip()
+            (
+                self.query_planner_model,
+                self.query_planner_uses_dehydrator,
+            ) = self._resolve_query_planner_model(configured_model)
+            self.gateway_cfg["query_planner_model"] = configured_model
             updated.append("gateway.query_planner_model")
         if "query_planner_min_chars" in payload:
             self.query_planner_min_chars = max(0, int(payload["query_planner_min_chars"]))
@@ -7290,6 +7295,19 @@ class GatewayService:
     ) -> str:
         return await self._build_diffused_memory_block(recalled_buckets, all_buckets)
 
+    def _resolve_query_planner_model(self, configured_model: Any = None) -> tuple[str, bool]:
+        if configured_model is None:
+            configured_model = self.gateway_cfg.get("query_planner_model")
+        explicit_model = str(configured_model or "").strip()
+        if explicit_model:
+            return explicit_model, False
+        model = str(getattr(self.dehydrator, "model", "") or "").strip()
+        if not model:
+            dehy_cfg = self.config.get("dehydration", {})
+            if isinstance(dehy_cfg, dict):
+                model = str(dehy_cfg.get("model") or "").strip()
+        return model, True
+
     def _query_planner_debug_base(self, query: str) -> dict[str, Any]:
         anchor_plan = self._query_anchor_plan(query)
         return {
@@ -7310,6 +7328,8 @@ class GatewayService:
                 "neighbor_terms": [],
             },
             "errors": [],
+            "model": self.query_planner_model,
+            "model_source": "dehydration" if self.query_planner_uses_dehydrator else "gateway",
         }
 
     def _query_anchor_plan(self, query: str) -> QueryAnchorPlan:
@@ -7423,7 +7443,7 @@ class GatewayService:
         return False
 
     async def _call_query_planner(self, query: str) -> tuple[dict[str, Any] | None, str | None]:
-        model = self.query_planner_model or self.upstream_default_model
+        model = self.query_planner_model
         if not model:
             return None, "query_planner_model_missing"
         payload = {
@@ -7445,6 +7465,17 @@ class GatewayService:
             "max_tokens": self.query_planner_max_tokens,
             "stream": False,
         }
+        if self.query_planner_uses_dehydrator:
+            content, error = await self._call_query_planner_with_dehydrator(payload)
+            if error:
+                return None, error
+            if not content:
+                return None, "query_planner_empty_response"
+            try:
+                return self._parse_query_planner_response(content), None
+            except ValueError as exc:
+                return None, f"query_planner_parse_failed:{exc}"
+
         try:
             response = await self._forward_upstream(payload)
         except Exception as exc:
@@ -7463,6 +7494,38 @@ class GatewayService:
             return self._parse_query_planner_response(content), None
         except ValueError as exc:
             return None, f"query_planner_parse_failed:{exc}"
+
+    async def _call_query_planner_with_dehydrator(self, payload: dict) -> tuple[str | None, str | None]:
+        client = getattr(self.dehydrator, "client", None)
+        if client is None:
+            return None, "query_planner_dehydration_unavailable"
+        completion_options = getattr(self.dehydrator, "_completion_options", None)
+        if callable(completion_options):
+            options = completion_options(
+                max_tokens=self.query_planner_max_tokens,
+                temperature=0,
+            )
+        else:
+            options = {
+                "max_tokens": self.query_planner_max_tokens,
+                "temperature": 0,
+            }
+        try:
+            response = await client.chat.completions.create(
+                model=payload["model"],
+                messages=payload["messages"],
+                **options,
+            )
+        except Exception as exc:
+            logger.warning("Gateway query planner dehydration call failed: %s", exc)
+            return None, f"query_planner_dehydration_call_failed:{type(exc).__name__}"
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return None, None
+        message = getattr(choices[0], "message", None)
+        if isinstance(message, dict):
+            return str(message.get("content") or ""), None
+        return str(getattr(message, "content", "") or ""), None
 
     @staticmethod
     def _chat_completion_content(body: dict[str, Any]) -> str:
