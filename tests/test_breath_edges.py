@@ -1288,12 +1288,12 @@ async def test_search_uses_word_map_hint_without_showing_neighbor_only_candidate
 async def test_single_cry_word_does_not_use_lexical_bucket_seed(patch_breath):
     import server
 
-    patch_breath(
+    bucket_mgr = patch_breath(
         [
             _bucket("A", "今天她哭了，但这个单字不能作为可靠召回锚点。", name="单字哭"),
         ],
         search_ids=[],
-        embedding_engine=DummyEmbeddingEngine([]),
+        embedding_engine=DummyEmbeddingEngine([("A", 0.95)]),
     )
 
     result = await server.breath(
@@ -1306,8 +1306,8 @@ async def test_single_cry_word_does_not_use_lexical_bucket_seed(patch_breath):
         surface="auto",
     )
 
-    assert "=== 直接命中记忆 ===" not in result
-    assert "[bucket_id:A]" not in result
+    assert result == "没有找到可靠命中。"
+    assert bucket_mgr.touched == []
 
 
 @pytest.mark.asyncio
