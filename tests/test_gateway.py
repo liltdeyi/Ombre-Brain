@@ -27,6 +27,45 @@ class DummyDehydrator:
         return f"DIRECT CAPSULE {name}: {compact[:120]}"
 
 
+class PlannerDehydrator(DummyDehydrator):
+    def __init__(self, model: str = "dehy-mini"):
+        self.model = model
+        self.calls = []
+        self.client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=self._create_completion),
+            ),
+        )
+
+    def _completion_options(self, *, max_tokens: int, temperature: float) -> dict:
+        return {"max_tokens": max_tokens, "temperature": temperature}
+
+    async def _create_completion(self, **kwargs):
+        self.calls.append(kwargs)
+        content = json.dumps(
+            {
+                "should_search": True,
+                "too_vague": False,
+                "queries": [
+                    {
+                        "query": "妈妈电话",
+                        "must_terms": ["妈妈", "电话"],
+                        "intent": "test",
+                        "risk": "low",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=content),
+                )
+            ],
+        )
+
+
 class DummyEmbeddingEngine:
     def __init__(
         self,
@@ -240,6 +279,7 @@ def _build_service(
     *,
     embedding_results: list[tuple[str, float]] | dict[str, list[tuple[str, float]]] | None = None,
     embedding_queries: list[str] | None = None,
+    dehydrator=None,
     reranker_engine=None,
     dream_engine=None,
     upstream_responder=None,
@@ -279,7 +319,7 @@ def _build_service(
     service = GatewayService(
         config=config,
         bucket_mgr=bucket_mgr,
-        dehydrator=DummyDehydrator(),
+        dehydrator=dehydrator or DummyDehydrator(),
         embedding_engine=DummyEmbeddingEngine(embedding_results, enabled=True, query_sink=embedding_queries),
         reranker_engine=reranker_engine or DummyRerankerEngine(enabled=False),
         state_store=state_store,
@@ -627,6 +667,30 @@ def test_gateway_config_endpoint_updates_memory_cooldown(monkeypatch, test_confi
     assert response.json()["reranker"]["candidate_limit"] == 6
     assert response.json()["reranker"]["score_weight"] == pytest.approx(0.4)
     assert response.json()["memory_diffusion"]["chain_walk_enabled"] is True
+
+
+def test_gateway_query_planner_defaults_to_dehydration_model(monkeypatch, test_config, bucket_mgr):
+    dehydrator = PlannerDehydrator(model="dehy-mini")
+    app, service, _, captured = _build_service(
+        monkeypatch,
+        _gateway_config(
+            test_config,
+            query_planner_enabled=True,
+            query_planner_model="",
+        ),
+        bucket_mgr,
+        dehydrator=dehydrator,
+    )
+
+    plan, error = _run(service._call_query_planner("妈妈电话和项目 delay 混在一起"))
+
+    assert app
+    assert error is None
+    assert plan["queries"][0]["query"] == "妈妈电话"
+    assert service.query_planner_model == "dehy-mini"
+    assert service.query_planner_uses_dehydrator is True
+    assert dehydrator.calls[0]["model"] == "dehy-mini"
+    assert captured == []
 
 
 def test_gateway_config_endpoint_updates_persona_engine(monkeypatch, test_config, bucket_mgr):
