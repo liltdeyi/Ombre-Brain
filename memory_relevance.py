@@ -185,6 +185,8 @@ DEFAULT_CONFLICTS = {
     "communication_action": ("hardware_protocol",),
 }
 CAREER_GENERIC_DIRECT_TERMS = frozenset({"工作"})
+_FACETS_FOR_TEXT_CACHE: dict[tuple[int, str], tuple[tuple[str, float], ...]] = {}
+_FACETS_FOR_TEXT_CACHE_MAX = 512
 
 TECHNICAL_RECALL_STRONG_TERMS = frozenset(
     {
@@ -463,10 +465,19 @@ def facets_for_text(
     options: MemoryRelevanceOptions | None = None,
 ) -> dict[str, float]:
     options = options or memory_relevance_options_from_config()
-    return _facet_scores(
+    raw_text = str(text or "")
+    cache_key = (id(options), raw_text)
+    cached = _FACETS_FOR_TEXT_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    scores = _facet_scores(
         (("text", str(text or ""), 1.0),),
         options,
     )
+    if len(_FACETS_FOR_TEXT_CACHE) >= _FACETS_FOR_TEXT_CACHE_MAX:
+        _FACETS_FOR_TEXT_CACHE.clear()
+    _FACETS_FOR_TEXT_CACHE[cache_key] = tuple(scores.items())
+    return scores
 
 
 def facets_for_node(
