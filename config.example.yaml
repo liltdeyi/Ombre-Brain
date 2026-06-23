@@ -31,10 +31,11 @@ log_level: "INFO"
 # when adapting the fork for another person/persona.
 # 这些名字会进入提示词和年轮作者。改给别人用时优先改这一块。
 identity:
-  ai_name: "AI"                 # MCP-authored year rings and assistant wording
-  user_name: "User"             # Dashboard-authored year rings
-  user_display_name: "用户"      # How prompts refer to the human partner
+  ai_name: "cloud"              # MCP-authored year rings and assistant wording
+  user_name: "April"            # Dashboard-authored year rings
+  user_display_name: "April"    # How prompts refer to the human partner
   user_aliases:
+    - "四月"
     - "对方"
 
 # --- Merge threshold / 桶合并阈值 ---
@@ -551,7 +552,7 @@ reflection:
   # api_key: ""                   # empty = persona.api_key; OMBRE_REFLECTION_API_KEY overrides
   temperature: 0.1
   max_tokens: 700
-  timezone: "Asia/Shanghai"
+  timezone: "Asia/Tokyo"
   daily_hour: 4                   # generate daily impression after this local hour
   daily_min_memory_items: 5        # ordinary memory/update items required before daily impression writes
   daily_conversation_turn_limit: 0 # 0 = do not include short-term conversation_turns in daily impression material
@@ -592,7 +593,7 @@ portrait:
   auto_enabled: true
   auto_initial_enabled: false       # first portrait state requires manual generation
   daily_enabled: true
-  timezone: "Asia/Shanghai"
+  timezone: "Asia/Tokyo"
   daily_hour: 4
   check_interval_minutes: 60
   state_path: ""                    # default = state/portrait_state.json
@@ -630,7 +631,7 @@ dream:
   thinking_mode: "disabled"
   temperature: 0.85
   max_tokens: 900
-  timezone: "Asia/Shanghai"
+  timezone: "Asia/Tokyo"
   daily_hour: 3
   run_window_hours: 3
   daily_probability: 0.4
