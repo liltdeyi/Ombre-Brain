@@ -7,24 +7,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #FDFCF0;
-    --bg-gradient: radial-gradient(ellipse at 30% 20%, #FDFCF0 0%, #EDE4D3 60%, #E2D1B3 100%);
-    --surface: rgba(255, 255, 255, 0.45);
-    --surface-solid: #F7F2E8;
-    --border: rgba(180, 165, 140, 0.3);
-    --border-strong: rgba(160, 140, 110, 0.5);
-    --text: #3A3530;
-    --text-dim: #8A8070;
-    --text-light: #B0A590;
-    --accent: #2F4F4F;
-    --accent-light: #3D6363;
-    --accent-glow: rgba(47, 79, 79, 0.12);
+    --bg: #F7F7F5;
+    --bg-gradient: radial-gradient(ellipse at 30% 20%, #F7F7F5 0%, #EDEDED 60%, #E5E5E3 100%);
+    --surface: rgba(255, 255, 255, 0.55);
+    --surface-solid: #F0F0EE;
+    --border: rgba(160, 160, 158, 0.3);
+    --border-strong: rgba(140, 140, 138, 0.5);
+    --text: #2D2D2D;
+    --text-dim: #8A8A88;
+    --text-light: #B0B0AE;
+    --accent: #DA7756;
+    --accent-light: #E08B6A;
+    --accent-glow: rgba(218, 119, 86, 0.12);
     --positive: #4A7C59;
     --negative: #8B4A4A;
     --warning: #9A7B4F;
-    --shadow-light: rgba(255, 252, 240, 0.7);
-    --shadow-dark: rgba(163, 148, 120, 0.4);
-    --shadow-dark-subtle: rgba(163, 148, 120, 0.2);
+    --shadow-light: rgba(247, 247, 245, 0.7);
+    --shadow-dark: rgba(140, 140, 138, 0.4);
+    --shadow-dark-subtle: rgba(140, 140, 138, 0.2);
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -46,7 +46,7 @@
     align-items: center;
     gap: 20px;
     backdrop-filter: blur(12px);
-    background: rgba(253, 252, 240, 0.7);
+    background: rgba(247, 247, 245, 0.7);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -74,9 +74,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1px solid rgba(47, 79, 79, 0.18);
+    border: 1px solid rgba(218, 119, 86, 0.18);
     border-radius: 8px;
-    background: rgba(47, 79, 79, 0.055);
+    background: rgba(218, 119, 86, 0.055);
     color: var(--accent);
     font-family: inherit;
     cursor: pointer;
@@ -84,8 +84,8 @@
   }
   .darkroom-door[hidden] { display: none; }
   .darkroom-door:hover {
-    border-color: rgba(47, 79, 79, 0.32);
-    background: rgba(47, 79, 79, 0.08);
+    border-color: rgba(218, 119, 86, 0.32);
+    background: rgba(218, 119, 86, 0.08);
   }
   .darkroom-door:focus-visible {
     outline: none;
@@ -102,7 +102,7 @@
     justify-content: center;
     flex: 0 0 auto;
     background: var(--accent);
-    color: #F8F2E7;
+    color: #FDF8F5;
     font-size: 12px;
     line-height: 1;
   }
@@ -155,7 +155,7 @@
     display: flex;
     padding: 0 40px;
     gap: 4px;
-    background: rgba(253, 252, 240, 0.5);
+    background: rgba(247, 247, 245, 0.5);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
   }
@@ -190,7 +190,7 @@
     font-weight: 400;
     border: none;
     border-radius: 24px;
-    background: linear-gradient(145deg, #FAF6ED, #EDE4D3);
+    background: linear-gradient(145deg, #F3F3F1, #E8E8E6);
     color: var(--text-dim);
     cursor: pointer;
     font-family: inherit;
@@ -207,7 +207,7 @@
     box-shadow: inset 2px 2px 5px var(--shadow-dark-subtle), inset -2px -2px 5px var(--shadow-light);
   }
   .filter-btn.active {
-    color: #F0EDE4;
+    color: #FDF8F5;
     background: linear-gradient(145deg, var(--accent-light), var(--accent));
     box-shadow: inset 3px 3px 6px rgba(0,0,0,0.2), inset -2px -2px 4px rgba(255,255,255,0.05);
   }
@@ -280,7 +280,7 @@
   }
   .bucket-row.selected {
     border-color: rgba(47, 79, 79, 0.45);
-    background: rgba(47, 79, 79, 0.08);
+    background: rgba(218, 119, 86, 0.08);
   }
   .bucket-select {
     display: flex;
@@ -781,7 +781,7 @@
   .btn-primary {
     padding: 12px 28px;
     background: linear-gradient(145deg, var(--accent-light), var(--accent));
-    color: #F0EDE4;
+    color: #FDF8F5;
     border: none;
     border-radius: 24px;
     font-family: inherit;
@@ -812,7 +812,7 @@
   }
   .btn-secondary {
     padding: 12px 28px;
-    background: linear-gradient(145deg, #FAF6ED, #EDE4D3);
+    background: linear-gradient(145deg, #F3F3F1, #E8E8E6);
     color: var(--accent);
     border: none;
     border-radius: 24px;
@@ -1184,7 +1184,7 @@
   }
   .breath-controls button {
     background: linear-gradient(145deg, var(--accent-light), var(--accent));
-    color: #F0EDE4;
+    color: #FDF8F5;
     border: none;
     padding: 12px 26px;
     border-radius: 24px;
@@ -1587,7 +1587,7 @@
   }
   .reflection-card .reflection-day.selected,
   .reflection-card .reflection-day.selected:hover {
-    color: #F0EDE4;
+    color: #FDF8F5;
     background: var(--accent);
     box-shadow: 0 10px 24px rgba(47,79,79,0.24);
     transform: none;
@@ -1605,7 +1605,7 @@
     border: 1px solid rgba(255,255,255,0.72);
   }
   .reflection-card .reflection-day.selected .reflection-day-dot {
-    background: #F7F2E8 !important;
+    background: #F0F0EE !important;
     border-color: rgba(255,255,255,0.88);
   }
   .reflection-day-panel {
@@ -2536,10 +2536,10 @@
 
 <div class="content" id="network-view" style="display:none">
   <div class="network-legend">
-    <div class="legend-item"><span class="legend-dot" style="background:#2F4F4F"></span> dynamic</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#DA7756"></span> dynamic</div>
     <div class="legend-item"><span class="legend-dot" style="background:#9A7B4F"></span> permanent</div>
     <div class="legend-item"><span class="legend-dot" style="background:#8B6A6A"></span> feel</div>
-    <div class="legend-item"><span class="legend-dot" style="background:#B0A590"></span> archived</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#B0B0AE"></span> archived</div>
   </div>
   <div class="network-stage">
     <canvas id="network-canvas"></canvas>
@@ -4911,9 +4911,9 @@ async function loadNetwork() {
 
   stopNetworkAnimation();
   hideNetworkPopover();
-  ctx.fillStyle = '#FDFCF0';
+  ctx.fillStyle = '#F7F7F5';
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#8A8070';
+  ctx.fillStyle = '#8A8A88';
   ctx.font = '14px Inter, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('加载记忆网络…', W/2, H/2);
@@ -5037,10 +5037,10 @@ function drawNetworkFrame(time) {
   if (!ctx) return;
   updateNetworkLinkedMotion();
 
-  ctx.fillStyle = '#FDFCF0';
+  ctx.fillStyle = '#F7F7F5';
   ctx.fillRect(0, 0, W, H);
   if (!nodes.length) {
-    ctx.fillStyle = '#8A8070';
+    ctx.fillStyle = '#8A8A88';
     ctx.font = '14px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('没有记忆桶', W/2, H/2);
@@ -5071,12 +5071,12 @@ function drawNetworkFrame(time) {
     }
   });
 
-  var colors = { dynamic: '#2F4F4F', permanent: '#9A7B4F', feel: '#8B6A6A', archived: '#B0A590' };
+  var colors = { dynamic: '#DA7756', permanent: '#9A7B4F', feel: '#8B6A6A', archived: '#B0B0AE' };
   nodes.forEach(function(n, i) {
     var p = positions[n.id];
     if (!p) return;
     var r = NETWORK_NODE_RADIUS;
-    var color = colors[n.type] || '#2F4F4F';
+    var color = colors[n.type] || '#DA7756';
     var isSelected = networkState.selectedId === n.id;
     var isDragging = networkState.drag && networkState.drag.type === 'node' && networkState.drag.node.id === n.id;
     var breath = isDragging ? 0.8 : 2.1 + Math.sin(time / 900 + i * 0.72) * 1.35;
@@ -5102,7 +5102,7 @@ function drawNetworkFrame(time) {
       ctx.stroke();
     }
     if (n.anchor) {
-      ctx.strokeStyle = '#2F4F4F';
+      ctx.strokeStyle = '#DA7756';
       ctx.lineWidth = 3;
       ctx.stroke();
     }
@@ -5115,7 +5115,7 @@ function drawNetworkFrame(time) {
     var degree = (networkState.edgeMap[n.id] || []).length;
     if (nodes.length <= 45 || n.pinned || n.anchor || n.type === 'feel' || degree >= 2 || isSelected) {
       var name = n.name.length > 10 ? n.name.slice(0, 10) + '…' : n.name;
-      ctx.fillStyle = isSelected ? '#2F4F4F' : '#3A3530';
+      ctx.fillStyle = isSelected ? '#DA7756' : '#2D2D2D';
       ctx.font = isSelected ? '12px Inter, sans-serif' : '11px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(name, p.x, p.y + r + 14);
@@ -5620,7 +5620,7 @@ async function runBreathDebug() {
     }
 
     var barColors = {
-      topic: '#2F4F4F',
+      topic: '#DA7756',
       emotion: '#8B6A6A',
       time: '#9A7B4F',
       importance: '#4A7C59',
