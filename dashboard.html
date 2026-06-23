@@ -72,88 +72,42 @@
     font-weight: 300;
     letter-spacing: 0.3px;
   }
-  .darkroom-door {
+  .header-right {
     margin-left: auto;
-    min-width: 320px;
-    max-width: 430px;
-    height: 40px;
-    padding: 7px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid rgba(218, 119, 86, 0.18);
-    border-radius: 8px;
-    background: rgba(218, 119, 86, 0.055);
-    color: var(--accent);
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 3px 3px 8px var(--shadow-dark-subtle);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .darkroom-door {
+    height: 32px; padding: 4px 10px;
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid rgba(218, 119, 86, 0.18); border-radius: 16px;
+    background: rgba(218, 119, 86, 0.055); color: var(--accent);
+    font-family: inherit; cursor: pointer; font-size: 12px; white-space: nowrap;
   }
   .darkroom-door[hidden] { display: none; }
-  .darkroom-door:hover {
-    border-color: rgba(218, 119, 86, 0.32);
-    background: rgba(218, 119, 86, 0.08);
-  }
-  .darkroom-door:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--accent-glow), inset 0 0 0 1px rgba(255,255,255,0.18);
-  }
-  .darkroom-door[hidden] + .search-bar { margin-left: auto; }
-  .darkroom-door:not([hidden]) + .search-bar { margin-left: 0; }
+  .darkroom-door:hover { border-color: rgba(218, 119, 86, 0.32); background: rgba(218, 119, 86, 0.08); }
   .darkroom-door-mark {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    background: var(--accent);
-    color: #FDF8F5;
-    font-size: 12px;
-    line-height: 1;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #FDF8F5; font-size: 10px; line-height: 1;
   }
-  .darkroom-door-copy {
-    min-width: 0;
-    display: grid;
-    gap: 1px;
-    text-align: left;
+  .darkroom-door-meta { color: var(--text-dim); font-size: 11px; }
+  .header-logout {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 16px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
   }
-  .darkroom-door-title {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .darkroom-door-meta {
-    color: var(--text-dim);
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .search-bar {
-    margin-left: auto;
-    display: flex;
-    gap: 8px;
-  }
+  .header-logout:hover { border-color: var(--border-strong); color: var(--text); }
+  .search-bar { display: flex; }
   .search-bar input {
-    background: var(--surface);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 10px 18px;
-    border-radius: 20px;
-    font-family: inherit;
-    font-size: 13px;
-    width: 260px;
+    background: var(--surface); backdrop-filter: blur(8px);
+    border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 16px;
+    font-family: inherit; font-size: 12px; width: 180px;
     transition: all 0.3s ease;
     box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
   .search-bar input:focus {
-    outline: none;
-    border-color: var(--accent);
+    outline: none; border-color: var(--accent); width: 240px;
     box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
   .search-bar input::placeholder { color: var(--text-light); }
@@ -477,6 +431,19 @@
     color: var(--accent-dark);
     background: var(--accent-glow);
   }
+  .detail-actions {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px;
+  }
+  .detail-actions button {
+    font-size: 12px; padding: 4px 12px; border-radius: 14px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+    font-family: inherit; transition: all 0.15s;
+  }
+  .detail-actions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+  .detail-actions button.danger { color: var(--negative); }
+  .detail-actions button.danger:hover { border-color: var(--negative); background: rgba(139,74,74,0.08); }
+  .detail-actions button.undo { color: var(--positive); }
+  .detail-actions button.undo:hover { border-color: var(--positive); background: rgba(74,124,89,0.08); }
   .bucket-content-block {
     position: relative;
     margin-top: 42px;
@@ -2175,17 +2142,12 @@
   .timeline-day:last-child .timeline-line-col::before { bottom: 50%; }
 
   @media (max-width: 768px) {
-    .header { padding: 20px; flex-wrap: wrap; }
+    .header { padding: 16px 20px; flex-wrap: wrap; gap: 10px; }
     .header h1 { font-size: 22px; }
-    .darkroom-door {
-      order: 3;
-      width: 100%;
-      min-width: 0;
-      max-width: none;
-      margin-left: 0;
-    }
-    .search-bar { margin-left: 0; width: 100%; }
-    .search-bar input { width: 100%; }
+    .header-right { width: 100%; gap: 6px; }
+    .darkroom-door { order: 0; }
+    .search-bar { flex: 1; }
+    .search-bar input { width: 100%; font-size: 13px; }
     .tabs { padding: 0 16px; overflow-x: auto; }
     .content { padding: 20px 16px; }
     .bucket-row {
@@ -2239,19 +2201,18 @@
 <body>
 
 <div class="header">
-  <h1>◐ Ombre Brain</h1>
+  <h1>☁️ Ombre Brain</h1>
   <span class="stats" id="stats">loading...</span>
-  <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="刷新暗房门口状态" hidden>
-    <span class="darkroom-door-mark">◑</span>
-    <span class="darkroom-door-copy">
-      <span class="darkroom-door-title">Darkroom Door</span>
-      <span class="darkroom-door-meta" id="darkroom-door-meta">entries 0</span>
-    </span>
-  </button>
-  <div class="search-bar">
-    <input type="search" id="search-input" name="ombre-memory-query" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" />
+  <div class="header-right">
+    <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="刷新暗房门口状态" hidden>
+      <span class="darkroom-door-mark">◑</span>
+      <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
+    </button>
+    <div class="search-bar">
+      <input type="search" id="search-input" name="ombre-memory-query" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" />
+    </div>
+    <button onclick="doLogout()" title="退出登录" class="header-logout">退出</button>
   </div>
-  <button onclick="doLogout()" title="退出登录" style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:20px;padding:7px 14px;font-size:12px;cursor:pointer;">退出</button>
 </div>
 
 <div class="tabs">
@@ -2684,7 +2645,7 @@
     <div id="import-errors" style="display:none;margin:12px 0;padding:12px;background:var(--surface);border-radius:8px;font-size:12px;color:var(--negative);max-height:120px;overflow-y:auto;"></div>
 
     <div id="import-results-section" style="margin:20px 0;">
-      <h3>已导入记忆 <button onclick="loadImportResults()" style="font-size:12px;padding:2px 10px;">刷新</button></h3>
+      <h3>已导入记忆 <span id="import-results-count" style="font-size:12px;font-weight:400;color:var(--text-dim);"></span> <button onclick="loadImportResults()" style="font-size:12px;padding:2px 10px;">刷新</button></h3>
       <div id="import-results-list" style="max-height:500px;overflow-y:auto;"></div>
     </div>
 
@@ -3216,14 +3177,7 @@ function renderDarkroomDoor(data) {
   var meta = document.getElementById('darkroom-door-meta');
   if (!door || !meta || !data || data.status !== 'ok') return;
   var count = Number(data.count || 0);
-  var parts = ['entries ' + count];
-  var entered = formatTimeAgo(data.last_entered_at);
-  if (count && entered !== '—') parts.push(entered);
-  var previous = formatDarkroomCompleteness(data.previous_completeness);
-  var current = formatDarkroomCompleteness(data.last_completeness);
-  if (previous && current && previous !== current) parts.push(previous + ' -> ' + current);
-  else if (current) parts.push(current);
-  meta.textContent = parts.join(' · ');
+  meta.textContent = count;
   door.hidden = false;
 }
 
@@ -4736,6 +4690,17 @@ async function showDetail(id) {
           '</div>' +
         '</form>' +
       '</div>' +
+      (function() {
+        var actions = '<div class="detail-actions">';
+        if (meta.resolved) {
+          actions += '<button class="undo" onclick="bucketAction(\'' + jsString(id) + '\',\'restore\')">↩ 撤销归档</button>';
+        } else {
+          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'important\')">' + (meta.importance >= 8 ? '⭐ 已重要' : '☆ 重要') + '</button>';
+          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')">💤 归档</button>';
+        }
+        actions += '<button class="danger" onclick="if(confirm(\'确定删除这条记忆？\'))bucketAction(\'' + jsString(id) + '\',\'delete\')">✕ 删除</button>';
+        return actions + '</div>';
+      })() +
       '<div class="detail-meta">' +
         '<div class="field"><label>ID</label>' + esc(id) + '</div>' +
         '<div class="field"><label>类型</label>' + esc(meta.type || 'dynamic') + '</div>' +
@@ -5117,6 +5082,42 @@ async function deleteBucketComment(bucketId, commentId) {
   } catch (e) {
     alert('删除年轮失败: ' + e.message);
   }
+}
+
+async function bucketAction(id, action) {
+  try {
+    if (action === 'delete') {
+      await authFetch(BASE + '/api/buckets/delete', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ ids: [id] })
+      });
+      closeDetail();
+      await loadBuckets();
+    } else if (action === 'noise') {
+      await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ resolved: true })
+      });
+      await showDetail(id);
+      await loadBuckets({ skipProfileRefresh: true });
+    } else if (action === 'restore') {
+      await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ resolved: false })
+      });
+      await showDetail(id);
+      await loadBuckets({ skipProfileRefresh: true });
+    } else if (action === 'important') {
+      var bucket = allBuckets.find(function(b) { return b.id === id; });
+      var newImp = (bucket && bucket.importance >= 8) ? 5 : 9;
+      await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ importance: newImp })
+      });
+      await showDetail(id);
+      await loadBuckets({ skipProfileRefresh: true });
+    }
+  } catch(e) { console.error('bucketAction failed:', e); }
 }
 
 function closeDetail() {
@@ -6650,17 +6651,25 @@ async function pauseImport() {
   try { await authFetch(BASE + '/api/import/pause', { method: 'POST' }); } catch(e) {}
 }
 
+var importShowAll = false;
+
 async function loadImportResults() {
   const container = document.getElementById('import-results-list');
+  const countEl = document.getElementById('import-results-count');
   container.innerHTML = '<div class="loading">加载中…</div>';
   try {
-    const res = await authFetch(BASE + '/api/import/results?limit=30');
+    const limit = importShowAll ? 9999 : 50;
+    const res = await authFetch(BASE + '/api/import/results?limit=' + limit);
     if (!res) return;
     const data = await res.json();
     if (!data.buckets || !data.buckets.length) {
       container.innerHTML = '<p style="color:var(--text-dim)">暂无记忆桶</p>';
+      if (countEl) countEl.textContent = '';
       return;
     }
+    const total = data.total || data.buckets.length;
+    const shown = data.buckets.length;
+    if (countEl) countEl.textContent = shown + ' / ' + total + ' 条';
     container.innerHTML = data.buckets.map(b => {
       const id = String(b.id || '');
       const safeId = jsString(id);
@@ -6670,19 +6679,55 @@ async function loadImportResults() {
           <b>${esc(b.name || id)}</b>
           <span style="font-size:11px;color:var(--text-dim);">${esc(b.type || '')} | ${esc((b.domain||[]).join(','))} | imp:${esc(b.importance)}</span>
         </div>
-        <p style="font-size:13px;margin:6px 0;white-space:pre-wrap;">${esc(b.content)}</p>
+        <p id="ir-content-${escAttr(id)}" style="font-size:13px;margin:6px 0;white-space:pre-wrap;">${esc(b.content)}</p>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${esc((b.tags||[]).map(t=>'#'+t).join(' '))}</div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="reviewAction('${safeId}','pin')" title="固定为永久记忆">📌 固定</button>
           <button onclick="reviewAction('${safeId}','anchor')" title="标为长期锚点">⚓ Anchor</button>
           <button onclick="reviewAction('${safeId}','important')" title="标为重要">⭐ 重要</button>
           <button onclick="reviewAction('${safeId}','noise')" title="标为噪声并resolve">🗑 噪声</button>
           <button onclick="if(confirm('确定删除？'))reviewAction('${safeId}','delete')" title="彻底删除" style="color:var(--negative);">✕ 删除</button>
+          <button onclick="startImportEdit('${safeId}')" title="编辑内容">✎ 编辑</button>
         </div>
+        <form id="ir-edit-${escAttr(id)}" class="hidden" onsubmit="submitImportEdit(event,'${safeId}')" style="margin-top:8px;">
+          <textarea name="content" style="width:100%;min-height:80px;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;background:var(--surface-solid);">${esc(b.content)}</textarea>
+          <div style="display:flex;gap:8px;margin-top:6px;">
+            <button type="button" onclick="cancelImportEdit('${safeId}')" style="font-size:12px;">取消</button>
+            <button type="submit" style="font-size:12px;">保存</button>
+          </div>
+        </form>
       </div>
     `;
     }).join('');
+    if (!importShowAll && total > shown) {
+      container.innerHTML += '<div style="text-align:center;margin:16px 0;"><button onclick="importShowAll=true;loadImportResults()" style="padding:8px 24px;border-radius:16px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;font-size:13px;">显示全部 (' + total + ' 条)</button></div>';
+    }
   } catch(e) { container.innerHTML = '<p style="color:var(--negative)">加载失败: ' + esc(e.message) + '</p>'; }
+}
+
+function startImportEdit(id) {
+  var form = document.getElementById('ir-edit-' + id);
+  if (form) form.classList.remove('hidden');
+}
+
+function cancelImportEdit(id) {
+  var form = document.getElementById('ir-edit-' + id);
+  if (form) form.classList.add('hidden');
+}
+
+async function submitImportEdit(event, id) {
+  event.preventDefault();
+  var form = event.target;
+  var content = form.elements.content.value;
+  try {
+    await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ content: content })
+    });
+    var contentEl = document.getElementById('ir-content-' + id);
+    if (contentEl) contentEl.textContent = content;
+    cancelImportEdit(id);
+  } catch(e) { console.error('Edit failed:', e); }
 }
 
 async function detectPatterns() {
