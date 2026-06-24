@@ -3159,7 +3159,6 @@ async function doLogout() {
   showAuthOverlay(false);
 }
 
-document.querySelectorAll('.tab').forEach(tab => {
 function switchTab(target) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     var activeTab = document.querySelector('.tab[data-tab="' + target + '"]');
@@ -3190,7 +3189,7 @@ function switchTab(target) {
     if (target === 'network') loadNetwork();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
-  }
+}
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
