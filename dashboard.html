@@ -100,20 +100,20 @@
     background: var(--accent); color: #FDF8F5; font-size: 10px; line-height: 1;
   }
   .darkroom-door-meta { color: var(--text-dim); font-size: 11px; }
-  .search-bar { display: flex; }
+  .search-bar { display: flex; flex-shrink: 0; }
   .search-bar input {
     background: var(--surface); backdrop-filter: blur(8px);
     border: 1px solid var(--border); color: var(--text);
-    padding: 6px 14px; border-radius: 16px;
-    font-family: inherit; font-size: 12px; width: 160px;
+    padding: 5px 12px; border-radius: 15px;
+    font-family: inherit; font-size: 12px; width: 44px;
     transition: all 0.3s ease;
     box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
   .search-bar input:focus {
-    outline: none; border-color: var(--accent); width: 220px;
+    outline: none; border-color: var(--accent); width: 180px;
     box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
-  .search-bar input::placeholder { color: var(--text-light); }
+  .search-bar input::placeholder { color: var(--text-light); font-size: 12px; }
 
   /* Row 2: hamburger + main tabs + user menu */
   .header-row2 {
@@ -481,13 +481,14 @@
     border: 1px solid var(--border); background: white; color: var(--text-dim);
     font-family: inherit; transition: all 0.15s; display: flex; align-items: center; gap: 4px;
   }
-  .detail-actions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
-  .detail-actions button.active-imp { border-color: #88B6F2; color: #5A9AE6; background: rgba(136,182,242,0.1); }
-  .detail-actions button.active-pin { border-color: #F29F05; color: #D98E04; background: rgba(242,159,5,0.08); }
-  .detail-actions button.danger { color: #F23005; }
-  .detail-actions button.danger:hover { border-color: #F23005; background: rgba(242,48,5,0.06); }
-  .detail-actions button.undo { color: var(--positive); }
-  .detail-actions button.undo:hover { border-color: var(--positive); background: rgba(74,124,89,0.08); }
+  .detail-actions button:hover { border-color: var(--border-strong); color: var(--text); }
+  .detail-actions button.btn-imp:hover { border-color: #88B6F2; color: #5A9AE6; background: rgba(136,182,242,0.1); }
+  .detail-actions button.btn-pin:hover { border-color: #F29F05; color: #D98E04; background: rgba(242,159,5,0.08); }
+  .detail-actions button.btn-archive:hover { border-color: var(--positive); color: var(--positive); background: rgba(74,124,89,0.08); }
+  .detail-actions button.active-imp, .detail-actions button.active-imp:hover { border-color: #88B6F2; color: #5A9AE6; background: rgba(136,182,242,0.1); }
+  .detail-actions button.active-pin, .detail-actions button.active-pin:hover { border-color: #F29F05; color: #D98E04; background: rgba(242,159,5,0.08); }
+  .detail-actions button.danger, .detail-actions button.danger:hover { color: #F23005; border-color: #F23005; background: rgba(242,48,5,0.06); }
+  .detail-actions button.undo, .detail-actions button.undo:hover { color: var(--positive); border-color: var(--positive); background: rgba(74,124,89,0.08); }
   .bucket-content-block {
     position: relative;
     margin-top: 42px;
@@ -2192,7 +2193,7 @@
     .header-row1 .stats { font-size: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .header-right { gap: 4px; }
     .darkroom-door { height: 28px; padding: 3px 6px; }
-    .search-bar input { width: 80px; font-size: 11px; padding: 5px 10px; }
+    .search-bar input { width: 36px; font-size: 11px; padding: 4px 10px; }
     .search-bar input:focus { width: 120px; }
     .header-row2 { gap: 0; }
     .tab { padding: 8px 10px; font-size: 12px; }
@@ -2258,7 +2259,7 @@
         <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
       </button>
       <div class="search-bar">
-        <input type="search" id="search-input" name="ombre-memory-query" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" />
+        <input type="search" id="search-input" name="ombre-memory-query" placeholder="🔍" autocomplete="off" spellcheck="false" />
       </div>
     </div>
   </div>
@@ -4775,10 +4776,10 @@ async function showDetail(id) {
           actions += '<button class="undo" onclick="bucketAction(\'' + jsString(id) + '\',\'restore\')"><i class=\"fa-solid fa-rotate-left\"></i> 撤销归档</button>';
         } else {
           var impActive = meta.importance >= 8;
-          actions += '<button class="' + (impActive ? 'active-imp' : '') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'important\')"><i class=\"fa-solid fa-star\"></i> ' + (impActive ? '已重要' : '重要') + '</button>';
-          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')"><i class=\"fa-solid fa-box-archive\"></i> 归档</button>';
+          actions += '<button class="' + (impActive ? 'active-imp' : 'btn-imp') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'important\')"><i class=\"fa-solid fa-star\"></i> ' + (impActive ? '已重要' : '重要') + '</button>';
+          actions += '<button class="btn-archive" onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')"><i class=\"fa-solid fa-box-archive\"></i> 归档</button>';
           var pinActive = meta.pinned;
-          actions += '<button class="' + (pinActive ? 'active-pin' : '') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'pin\')"><i class=\"fa-solid fa-thumbtack\"></i> ' + (pinActive ? '已固定' : '固定') + '</button>';
+          actions += '<button class="' + (pinActive ? 'active-pin' : 'btn-pin') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'pin\')"><i class=\"fa-solid fa-thumbtack\"></i> ' + (pinActive ? '已固定' : '固定') + '</button>';
         }
         actions += '<button class="danger" onclick="if(confirm(\'确定删除这条记忆？\'))bucketAction(\'' + jsString(id) + '\',\'delete\')"><i class=\"fa-solid fa-trash\"></i> 删除</button>';
         return actions + '</div>';
