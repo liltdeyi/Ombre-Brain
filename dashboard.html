@@ -77,14 +77,15 @@
   }
   .header-right {
     margin-left: auto;
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
   .darkroom-door {
-    height: 32px; padding: 4px 10px;
-    display: flex; align-items: center; gap: 6px;
-    border: 1px solid rgba(218, 119, 86, 0.18); border-radius: 16px;
+    height: 30px; padding: 4px 8px;
+    display: flex; align-items: center; gap: 4px;
+    border: 1px solid rgba(218, 119, 86, 0.18); border-radius: 15px;
     background: rgba(218, 119, 86, 0.055); color: var(--accent);
-    font-family: inherit; cursor: pointer; font-size: 12px; white-space: nowrap;
+    font-family: inherit; cursor: pointer; font-size: 11px; white-space: nowrap;
+    flex-shrink: 0;
   }
   .darkroom-door[hidden] { display: none; }
   .darkroom-door:hover { border-color: rgba(218, 119, 86, 0.32); background: rgba(218, 119, 86, 0.08); }
@@ -471,13 +472,15 @@
     display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px;
   }
   .detail-actions button {
-    font-size: 12px; padding: 4px 12px; border-radius: 14px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
-    font-family: inherit; transition: all 0.15s;
+    font-size: 12px; padding: 5px 14px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: white; color: var(--text-dim);
+    font-family: inherit; transition: all 0.15s; display: flex; align-items: center; gap: 4px;
   }
   .detail-actions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
-  .detail-actions button.danger { color: var(--negative); }
-  .detail-actions button.danger:hover { border-color: var(--negative); background: rgba(139,74,74,0.08); }
+  .detail-actions button.active-imp { border-color: #D4A86A; color: #C69245; background: rgba(212,168,106,0.1); }
+  .detail-actions button.active-pin { border-color: var(--accent); color: var(--accent); background: rgba(218,119,86,0.08); }
+  .detail-actions button.danger { color: #B07070; }
+  .detail-actions button.danger:hover { border-color: #B07070; background: rgba(176,112,112,0.06); }
   .detail-actions button.undo { color: var(--positive); }
   .detail-actions button.undo:hover { border-color: var(--positive); background: rgba(74,124,89,0.08); }
   .bucket-content-block {
@@ -2178,12 +2181,14 @@
   .timeline-day:last-child .timeline-line-col::before { bottom: 50%; }
 
   @media (max-width: 768px) {
-    .header { padding: 12px 16px 0; }
-    .header-row1 { gap: 8px; margin-bottom: 6px; }
-    .header-row1 h1 { font-size: 20px; }
-    .header-right { gap: 6px; }
-    .search-bar input { width: 100px; font-size: 12px; }
-    .search-bar input:focus { width: 140px; }
+    .header { padding: 10px 12px 0; }
+    .header-row1 { gap: 6px; margin-bottom: 4px; flex-wrap: nowrap; }
+    .header-row1 h1 { font-size: 18px; flex-shrink: 0; }
+    .header-row1 .stats { font-size: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .header-right { gap: 4px; }
+    .darkroom-door { height: 28px; padding: 3px 6px; }
+    .search-bar input { width: 80px; font-size: 11px; padding: 5px 10px; }
+    .search-bar input:focus { width: 120px; }
     .header-row2 { gap: 0; }
     .tab { padding: 8px 10px; font-size: 12px; }
     .tab i { display: none; }
@@ -3155,10 +3160,10 @@ async function doLogout() {
 }
 
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
+function switchTab(target) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    const target = tab.dataset.tab;
+    var activeTab = document.querySelector('.tab[data-tab="' + target + '"]');
+    if (activeTab) activeTab.classList.add('active');
     document.getElementById('list-view').style.display = target === 'list' ? '' : 'none';
     document.getElementById('timeline-view').style.display = target === 'timeline' ? '' : 'none';
     document.getElementById('breath-view').style.display = target === 'breath' ? '' : 'none';
@@ -3185,6 +3190,11 @@ document.querySelectorAll('.tab').forEach(tab => {
     if (target === 'network') loadNetwork();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
+  }
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    switchTab(tab.dataset.tab);
   });
 });
 
@@ -4761,10 +4771,10 @@ async function showDetail(id) {
           actions += '<button class="undo" onclick="bucketAction(\'' + jsString(id) + '\',\'restore\')"><i class=\"fa-solid fa-rotate-left\"></i> 撤销归档</button>';
         } else {
           var impActive = meta.importance >= 8;
-          actions += '<button' + (impActive ? ' style="border-color:var(--warning);color:var(--warning);background:rgba(154,123,79,0.08)"' : '') + ' onclick="bucketAction(\'' + jsString(id) + '\',\'important\')"><i class=\"fa-solid fa-star\"></i> ' + (impActive ? '已重要' : '重要') + '</button>';
+          actions += '<button class="' + (impActive ? 'active-imp' : '') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'important\')"><i class=\"fa-solid fa-star\"></i> ' + (impActive ? '已重要' : '重要') + '</button>';
           actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')"><i class=\"fa-solid fa-box-archive\"></i> 归档</button>';
           var pinActive = meta.pinned;
-          actions += '<button' + (pinActive ? ' style="border-color:var(--accent);color:var(--accent);background:var(--accent-glow)"' : '') + ' onclick="bucketAction(\'' + jsString(id) + '\',\'pin\')"><i class=\"fa-solid fa-thumbtack\"></i> ' + (pinActive ? '已固定' : '固定') + '</button>';
+          actions += '<button class="' + (pinActive ? 'active-pin' : '') + '" onclick="bucketAction(\'' + jsString(id) + '\',\'pin\')"><i class=\"fa-solid fa-thumbtack\"></i> ' + (pinActive ? '已固定' : '固定') + '</button>';
         }
         actions += '<button class="danger" onclick="if(confirm(\'确定删除这条记忆？\'))bucketAction(\'' + jsString(id) + '\',\'delete\')"><i class=\"fa-solid fa-trash\"></i> 删除</button>';
         return actions + '</div>';
