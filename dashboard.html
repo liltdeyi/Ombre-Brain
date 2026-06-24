@@ -79,40 +79,30 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  }
   .header-right {
     margin-left: auto;
     display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
   .darkroom-door {
-    height: 30px; padding: 4px 8px;
-    display: flex; align-items: center; gap: 4px;
-    border: 1px solid rgba(218, 119, 86, 0.18); border-radius: 15px;
-    background: rgba(218, 119, 86, 0.055); color: var(--accent);
-    font-family: inherit; cursor: pointer; font-size: 11px; white-space: nowrap;
+    height: 30px; padding: 4px 10px;
+    display: flex; align-items: center; gap: 5px;
+    border: 1px solid rgba(137,207,240,0.3); border-radius: 15px;
+    background: rgba(137,207,240,0.08); color: #6BB8E0;
+    font-family: inherit; cursor: pointer; font-size: 12px; white-space: nowrap;
     flex-shrink: 0;
   }
   .darkroom-door[hidden] { display: none; }
-  .darkroom-door:hover { border-color: rgba(218, 119, 86, 0.32); background: rgba(218, 119, 86, 0.08); }
-  .darkroom-door-mark {
-    width: 18px; height: 18px; border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent); color: #FDF8F5; font-size: 10px; line-height: 1;
-  }
-  .darkroom-door-meta { color: var(--text-dim); font-size: 11px; }
-  .search-bar { display: flex; flex-shrink: 0; }
+  .darkroom-door:hover { border-color: rgba(137,207,240,0.5); background: rgba(137,207,240,0.14); }
+  .darkroom-door-meta { color: #6BB8E0; font-size: 11px; }
+  .search-bar { display: flex; align-items: center; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 0 10px; height: 30px; gap: 6px; transition: all 0.3s ease; box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light); }
+  .search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light); }
+  .search-icon { color: var(--text-light); font-size: 12px; cursor: pointer; flex-shrink: 0; }
   .search-bar input {
-    background: var(--surface); backdrop-filter: blur(8px);
-    border: 1px solid var(--border); color: var(--text);
-    padding: 5px 12px; border-radius: 15px;
-    font-family: inherit; font-size: 12px; width: 44px;
-    transition: all 0.3s ease;
-    box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
+    background: none; border: none; color: var(--text);
+    font-family: inherit; font-size: 12px; width: 0px;
+    transition: width 0.3s ease; outline: none; padding: 0;
   }
-  .search-bar input:focus {
-    outline: none; border-color: var(--accent); width: 180px;
-    box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
-  }
+  .search-bar:focus-within input { width: 120px; }
   .search-bar input::placeholder { color: var(--text-light); font-size: 12px; }
 
   /* Row 2: hamburger + main tabs + user menu */
@@ -2193,8 +2183,8 @@
     .header-row1 .stats { font-size: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .header-right { gap: 4px; }
     .darkroom-door { height: 28px; padding: 3px 6px; }
-    .search-bar input { width: 36px; font-size: 11px; padding: 4px 10px; }
-    .search-bar input:focus { width: 120px; }
+    .search-bar input { width: 0; }
+    .search-bar:focus-within input { width: 80px; }
     .header-row2 { gap: 0; }
     .tab { padding: 8px 10px; font-size: 12px; }
     .tab i { display: none; }
@@ -2255,11 +2245,12 @@
     <span class="stats" id="stats">loading...</span>
     <div class="header-right">
       <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="暗房" hidden>
-        <span class="darkroom-door-mark">◑</span>
+        <i class="fa-solid fa-door-closed"></i>
         <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
       </button>
       <div class="search-bar">
-        <input type="search" id="search-input" name="ombre-memory-query" placeholder="🔍" autocomplete="off" spellcheck="false" />
+        <label for="search-input" class="search-icon"><i class="fa-solid fa-magnifying-glass"></i></label>
+        <input type="search" id="search-input" name="ombre-memory-query" placeholder="" autocomplete="off" spellcheck="false" />
       </div>
     </div>
   </div>
