@@ -58,7 +58,7 @@
     z-index: 50;
   }
   .header-row1 {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: nowrap;
   }
   .header-row1 h1 {
     font-family: 'Cormorant Garamond', serif;
@@ -67,12 +67,17 @@
     color: var(--accent);
     letter-spacing: 0.5px;
     margin: 0;
+    flex-shrink: 0;
   }
   .header-row1 .stats {
     font-size: 11px;
     color: var(--text-dim);
     font-weight: 300;
     letter-spacing: 0.3px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   }
   .header-right {
@@ -392,7 +397,7 @@
     color: var(--accent);
   }
   .detail-panel h2 {
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'Nunito Sans', sans-serif;
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 20px;
@@ -477,10 +482,10 @@
     font-family: inherit; transition: all 0.15s; display: flex; align-items: center; gap: 4px;
   }
   .detail-actions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
-  .detail-actions button.active-imp { border-color: #D4A86A; color: #C69245; background: rgba(212,168,106,0.1); }
-  .detail-actions button.active-pin { border-color: var(--accent); color: var(--accent); background: rgba(218,119,86,0.08); }
-  .detail-actions button.danger { color: #B07070; }
-  .detail-actions button.danger:hover { border-color: #B07070; background: rgba(176,112,112,0.06); }
+  .detail-actions button.active-imp { border-color: #88B6F2; color: #5A9AE6; background: rgba(136,182,242,0.1); }
+  .detail-actions button.active-pin { border-color: #F29F05; color: #D98E04; background: rgba(242,159,5,0.08); }
+  .detail-actions button.danger { color: #F23005; }
+  .detail-actions button.danger:hover { border-color: #F23005; background: rgba(242,48,5,0.06); }
   .detail-actions button.undo { color: var(--positive); }
   .detail-actions button.undo:hover { border-color: var(--positive); background: rgba(74,124,89,0.08); }
   .bucket-content-block {
