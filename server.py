@@ -9119,9 +9119,14 @@ async def api_bucket_update(request):
     content = str(body.get("content") or "").strip() if "content" in body else None
     name = str(body.get("name") or "").strip() if "name" in body else None
     event_date = str(body.get("date") or "").strip() if "date" in body else None
+    resolved = body.get("resolved") if "resolved" in body else None
+    importance = body.get("importance") if "importance" in body else None
+    pinned = body.get("pinned") if "pinned" in body else None
+    anchor = body.get("anchor") if "anchor" in body else None
 
-    if content is None and name is None and event_date is None:
-        return JSONResponse({"error": "missing content, name, or date"}, status_code=400)
+    has_any = content is not None or name is not None or event_date is not None or resolved is not None or importance is not None or pinned is not None or anchor is not None
+    if not has_any:
+        return JSONResponse({"error": "no updatable fields provided"}, status_code=400)
     if event_date:
         normalized_date = local_date_key(event_date)
         if not normalized_date:
@@ -9146,6 +9151,14 @@ async def api_bucket_update(request):
         update_kwargs["name"] = name or None
     if event_date is not None:
         update_kwargs["date"] = event_date
+    if resolved is not None:
+        update_kwargs["resolved"] = bool(resolved)
+    if importance is not None:
+        update_kwargs["importance"] = max(1, min(10, int(importance)))
+    if pinned is not None:
+        update_kwargs["pinned"] = bool(pinned)
+    if anchor is not None:
+        update_kwargs["anchor"] = bool(anchor)
     update_kwargs["last_active"] = meta.get("last_active") or meta.get("created")
 
     ok = await bucket_mgr.update(bucket_id, **update_kwargs)

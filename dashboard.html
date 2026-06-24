@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Ombre Brain</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Nunito+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://kit.fontawesome.com/4f6eb2c233.js" crossorigin="anonymous"></script>
 <style>
   :root {
     --bg: #F7F7F5;
@@ -35,7 +36,7 @@
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-weight: 400;
     background: var(--bg-gradient);
     background-attachment: fixed;
@@ -48,10 +49,7 @@
   }
 
   .header {
-    padding: 28px 40px 20px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
+    padding: 16px 24px 0;
     backdrop-filter: blur(12px);
     background: rgba(247, 247, 245, 0.7);
     border-bottom: 1px solid var(--border);
@@ -59,18 +57,23 @@
     top: 0;
     z-index: 50;
   }
-  .header h1 {
+  .header-row1 {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+  }
+  .header-row1 h1 {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 600;
     color: var(--accent);
     letter-spacing: 0.5px;
+    margin: 0;
   }
-  .header .stats {
-    font-size: 12px;
+  .header-row1 .stats {
+    font-size: 11px;
     color: var(--text-dim);
     font-weight: 300;
     letter-spacing: 0.3px;
+  }
   }
   .header-right {
     margin-left: auto;
@@ -91,37 +94,68 @@
     background: var(--accent); color: #FDF8F5; font-size: 10px; line-height: 1;
   }
   .darkroom-door-meta { color: var(--text-dim); font-size: 11px; }
-  .header-logout {
-    background: none; border: 1px solid var(--border); color: var(--text-dim);
-    border-radius: 16px; padding: 5px 12px; font-size: 11px; cursor: pointer;
-    font-family: inherit; white-space: nowrap;
-  }
-  .header-logout:hover { border-color: var(--border-strong); color: var(--text); }
   .search-bar { display: flex; }
   .search-bar input {
     background: var(--surface); backdrop-filter: blur(8px);
     border: 1px solid var(--border); color: var(--text);
     padding: 6px 14px; border-radius: 16px;
-    font-family: inherit; font-size: 12px; width: 180px;
+    font-family: inherit; font-size: 12px; width: 160px;
     transition: all 0.3s ease;
     box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
   .search-bar input:focus {
-    outline: none; border-color: var(--accent); width: 240px;
+    outline: none; border-color: var(--accent); width: 220px;
     box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
   }
   .search-bar input::placeholder { color: var(--text-light); }
 
-  .tabs {
-    display: flex;
-    padding: 0 40px;
-    gap: 4px;
-    background: rgba(247, 247, 245, 0.5);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
+  /* Row 2: hamburger + main tabs + user menu */
+  .header-row2 {
+    display: flex; align-items: center; gap: 0; position: relative;
   }
+  .hamburger-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 16px; padding: 8px 12px 8px 0; font-family: inherit;
+  }
+  .hamburger-btn:hover { color: var(--accent); }
+  .hamburger-menu {
+    display: none; position: absolute; top: 100%; left: 0; z-index: 100;
+    background: var(--surface-solid); border: 1px solid var(--border);
+    border-radius: 12px; padding: 6px 0; min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  }
+  .hamburger-menu.open { display: block; }
+  .hamburger-menu .menu-item {
+    display: block; width: 100%; text-align: left; padding: 8px 16px;
+    font-size: 13px; color: var(--text); background: none; border: none;
+    cursor: pointer; font-family: inherit;
+  }
+  .hamburger-menu .menu-item:hover { background: var(--accent-glow); color: var(--accent); }
+  .user-btn {
+    margin-left: auto; background: none; border: 1px solid var(--border);
+    color: var(--text-dim); cursor: pointer; font-size: 14px;
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
+  }
+  .user-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .user-menu {
+    display: none; position: absolute; top: 100%; right: 0; z-index: 100;
+    background: var(--surface-solid); border: 1px solid var(--border);
+    border-radius: 12px; padding: 6px 0; min-width: 140px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  }
+  .user-menu.open { display: block; }
+  .user-menu .menu-item {
+    display: block; width: 100%; text-align: left; padding: 8px 16px;
+    font-size: 13px; color: var(--text); background: none; border: none;
+    cursor: pointer; font-family: inherit;
+  }
+  .user-menu .menu-item:hover { background: var(--accent-glow); color: var(--accent); }
+  .user-menu .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
   .tab {
-    padding: 14px 22px;
+    padding: 10px 16px;
     font-size: 13px;
     font-weight: 400;
     color: var(--text-dim);
@@ -129,6 +163,7 @@
     border-bottom: 2px solid transparent;
     transition: all 0.25s ease;
     letter-spacing: 0.3px;
+    white-space: nowrap;
   }
   .tab:hover { color: var(--text); }
   .tab.active {
@@ -136,6 +171,7 @@
     border-bottom-color: var(--accent);
     font-weight: 500;
   }
+  .tab i { margin-right: 4px; font-size: 12px; }
 
   .content { padding: 32px 40px; }
 
@@ -2142,13 +2178,15 @@
   .timeline-day:last-child .timeline-line-col::before { bottom: 50%; }
 
   @media (max-width: 768px) {
-    .header { padding: 16px 20px; flex-wrap: wrap; gap: 10px; }
-    .header h1 { font-size: 22px; }
-    .header-right { width: 100%; gap: 6px; }
-    .darkroom-door { order: 0; }
-    .search-bar { flex: 1; }
-    .search-bar input { width: 100%; font-size: 13px; }
-    .tabs { padding: 0 16px; overflow-x: auto; }
+    .header { padding: 12px 16px 0; }
+    .header-row1 { gap: 8px; margin-bottom: 6px; }
+    .header-row1 h1 { font-size: 20px; }
+    .header-right { gap: 6px; }
+    .search-bar input { width: 100px; font-size: 12px; }
+    .search-bar input:focus { width: 140px; }
+    .header-row2 { gap: 0; }
+    .tab { padding: 8px 10px; font-size: 12px; }
+    .tab i { display: none; }
     .content { padding: 20px 16px; }
     .bucket-row {
       grid-template-columns: 28px 1fr 60px;
@@ -2201,33 +2239,41 @@
 <body>
 
 <div class="header">
-  <h1>☁️ Ombre Brain</h1>
-  <span class="stats" id="stats">loading...</span>
-  <div class="header-right">
-    <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="刷新暗房门口状态" hidden>
-      <span class="darkroom-door-mark">◑</span>
-      <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
-    </button>
-    <div class="search-bar">
-      <input type="search" id="search-input" name="ombre-memory-query" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" />
+  <div class="header-row1">
+    <h1>☁️ Ombre Brain</h1>
+    <span class="stats" id="stats">loading...</span>
+    <div class="header-right">
+      <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="暗房" hidden>
+        <span class="darkroom-door-mark">◑</span>
+        <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
+      </button>
+      <div class="search-bar">
+        <input type="search" id="search-input" name="ombre-memory-query" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" />
+      </div>
     </div>
-    <button onclick="doLogout()" title="退出登录" class="header-logout">退出</button>
   </div>
-</div>
-
-<div class="tabs">
-  <div class="tab active" data-tab="list">记忆桶</div>
-  <div class="tab" data-tab="timeline">时间线</div>
-  <div class="tab" data-tab="breath">Breath 模拟</div>
-  <div class="tab" data-tab="reflection">日印象</div>
-  <div class="tab" data-tab="dreams">梦境</div>
-  <div class="tab" data-tab="persona">Persona</div>
-  <div class="tab" data-tab="profile">画像</div>
-  <div class="tab" data-tab="word-map">词图</div>
-  <div class="tab" data-tab="network">记忆网络</div>
-  <div class="tab" data-tab="config">配置</div>
-  <div class="tab" data-tab="memory-config">记忆浮现</div>
-  <div class="tab" data-tab="import">导入</div>
+  <div class="header-row2">
+    <button class="hamburger-btn" onclick="toggleHamburger()" title="更多"><i class="fa-solid fa-bars"></i></button>
+    <div class="hamburger-menu" id="hamburger-menu">
+      <button class="menu-item" onclick="switchTab('breath');closeMenus()"><i class="fa-solid fa-lungs"></i> Breath 模拟</button>
+      <button class="menu-item" onclick="switchTab('reflection');closeMenus()"><i class="fa-solid fa-cloud-sun"></i> 日印象</button>
+      <button class="menu-item" onclick="switchTab('dreams');closeMenus()"><i class="fa-solid fa-moon"></i> 梦境</button>
+      <button class="menu-item" onclick="switchTab('persona');closeMenus()"><i class="fa-solid fa-masks-theater"></i> Persona</button>
+      <button class="menu-item" onclick="switchTab('profile');closeMenus()"><i class="fa-solid fa-id-card"></i> 画像</button>
+      <button class="menu-item" onclick="switchTab('word-map');closeMenus()"><i class="fa-solid fa-diagram-project"></i> 词图</button>
+    </div>
+    <div class="tab active" data-tab="list"><i class="fa-solid fa-box-archive"></i> 记忆桶</div>
+    <div class="tab" data-tab="timeline"><i class="fa-solid fa-timeline"></i> 时间线</div>
+    <div class="tab" data-tab="network"><i class="fa-solid fa-circle-nodes"></i> 记忆网络</div>
+    <button class="user-btn" onclick="toggleUserMenu()" title="用户"><i class="fa-solid fa-user"></i></button>
+    <div class="user-menu" id="user-menu">
+      <button class="menu-item" onclick="switchTab('config');closeMenus()"><i class="fa-solid fa-gear"></i> 配置</button>
+      <button class="menu-item" onclick="switchTab('memory-config');closeMenus()"><i class="fa-solid fa-sliders"></i> 记忆浮现</button>
+      <button class="menu-item" onclick="switchTab('import');closeMenus()"><i class="fa-solid fa-file-import"></i> 导入</button>
+      <div class="menu-divider"></div>
+      <button class="menu-item" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 退出登录</button>
+    </div>
+  </div>
 </div>
 
 <div class="content" id="list-view">
@@ -3083,6 +3129,25 @@ async function doLogin() {
   }
   showAuthError('密码错误');
 }
+
+function toggleHamburger() {
+  document.getElementById('hamburger-menu').classList.toggle('open');
+  document.getElementById('user-menu').classList.remove('open');
+}
+function toggleUserMenu() {
+  document.getElementById('user-menu').classList.toggle('open');
+  document.getElementById('hamburger-menu').classList.remove('open');
+}
+function closeMenus() {
+  document.getElementById('hamburger-menu').classList.remove('open');
+  document.getElementById('user-menu').classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.hamburger-btn') && !e.target.closest('.hamburger-menu') &&
+      !e.target.closest('.user-btn') && !e.target.closest('.user-menu')) {
+    closeMenus();
+  }
+});
 
 async function doLogout() {
   await fetch(authUrl('/auth/logout'), { method: 'POST' });
@@ -4693,12 +4758,15 @@ async function showDetail(id) {
       (function() {
         var actions = '<div class="detail-actions">';
         if (meta.resolved) {
-          actions += '<button class="undo" onclick="bucketAction(\'' + jsString(id) + '\',\'restore\')">↩ 撤销归档</button>';
+          actions += '<button class="undo" onclick="bucketAction(\'' + jsString(id) + '\',\'restore\')"><i class=\"fa-solid fa-rotate-left\"></i> 撤销归档</button>';
         } else {
-          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'important\')">' + (meta.importance >= 8 ? '⭐ 已重要' : '☆ 重要') + '</button>';
-          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')">💤 归档</button>';
+          var impActive = meta.importance >= 8;
+          actions += '<button' + (impActive ? ' style="border-color:var(--warning);color:var(--warning);background:rgba(154,123,79,0.08)"' : '') + ' onclick="bucketAction(\'' + jsString(id) + '\',\'important\')"><i class=\"fa-solid fa-star\"></i> ' + (impActive ? '已重要' : '重要') + '</button>';
+          actions += '<button onclick="bucketAction(\'' + jsString(id) + '\',\'noise\')"><i class=\"fa-solid fa-box-archive\"></i> 归档</button>';
+          var pinActive = meta.pinned;
+          actions += '<button' + (pinActive ? ' style="border-color:var(--accent);color:var(--accent);background:var(--accent-glow)"' : '') + ' onclick="bucketAction(\'' + jsString(id) + '\',\'pin\')"><i class=\"fa-solid fa-thumbtack\"></i> ' + (pinActive ? '已固定' : '固定') + '</button>';
         }
-        actions += '<button class="danger" onclick="if(confirm(\'确定删除这条记忆？\'))bucketAction(\'' + jsString(id) + '\',\'delete\')">✕ 删除</button>';
+        actions += '<button class="danger" onclick="if(confirm(\'确定删除这条记忆？\'))bucketAction(\'' + jsString(id) + '\',\'delete\')"><i class=\"fa-solid fa-trash\"></i> 删除</button>';
         return actions + '</div>';
       })() +
       '<div class="detail-meta">' +
@@ -5113,6 +5181,15 @@ async function bucketAction(id, action) {
       await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
         method: 'PATCH', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ importance: newImp })
+      });
+      await showDetail(id);
+      await loadBuckets({ skipProfileRefresh: true });
+    } else if (action === 'pin') {
+      var bucket = allBuckets.find(function(b) { return b.id === id; });
+      var newPin = !(bucket && bucket.pinned);
+      await authFetch(BASE + '/api/bucket/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pinned: newPin })
       });
       await showDetail(id);
       await loadBuckets({ skipProfileRefresh: true });
@@ -6767,9 +6844,20 @@ async function reviewAction(bid, action) {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ decisions: [{ bucket_id: bid, action }] })
     });
-    // Remove card from UI
-    const card = document.getElementById('ir-' + bid);
-    if (card) card.style.display = 'none';
+    if (action === 'noise' || action === 'delete') {
+      const card = document.getElementById('ir-' + bid);
+      if (card) card.style.opacity = '0.4';
+    } else {
+      const card = document.getElementById('ir-' + bid);
+      if (card) {
+        var label = action === 'important' ? '⭐ 已标重要' : action === 'pin' ? '📌 已固定' : action === 'anchor' ? '⚓ 已锚定' : '✓ 已操作';
+        var badge = document.createElement('span');
+        badge.style.cssText = 'display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:rgba(74,124,89,0.1);color:var(--positive);margin-left:8px;';
+        badge.textContent = label;
+        var title = card.querySelector('b');
+        if (title && !card.querySelector('.review-badge')) { badge.className = 'review-badge'; title.after(badge); }
+      }
+    }
   } catch(e) {}
 }
 
