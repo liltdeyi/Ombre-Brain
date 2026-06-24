@@ -94,6 +94,23 @@
   .darkroom-door[hidden] { display: none; }
   .darkroom-door:hover { border-color: rgba(137,207,240,0.5); background: rgba(137,207,240,0.14); }
   .darkroom-door-meta { color: #6BB8E0; font-size: 11px; }
+  .darkroom-panel {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 90vw;
+    background: var(--surface-solid); border-left: 1px solid var(--border);
+    z-index: 200; box-shadow: -8px 0 24px rgba(0,0,0,0.08);
+    overflow-y: auto; padding: 24px;
+  }
+  .darkroom-panel.open { display: block; }
+  .darkroom-panel h3 { font-size: 16px; color: #6BB8E0; margin: 0 0 16px; display: flex; align-items: center; gap: 8px; }
+  .darkroom-panel .dr-close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 18px; color: var(--text-dim); cursor: pointer; }
+  .darkroom-entry-card {
+    background: white; border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .darkroom-entry-card .dr-meta { font-size: 11px; color: var(--text-light); margin-bottom: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .darkroom-entry-card .dr-meta .dr-tag { background: rgba(137,207,240,0.1); color: #6BB8E0; padding: 1px 6px; border-radius: 8px; font-size: 10px; }
+  .darkroom-entry-card .dr-body { font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; }
+  .darkroom-entry-card .dr-locked { font-size: 13px; color: var(--text-light); font-style: italic; }
   .search-bar { display: flex; align-items: center; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 0 10px; height: 30px; gap: 6px; transition: all 0.3s ease; box-shadow: inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light); }
   .search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow), inset 2px 2px 4px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light); }
   .search-icon { color: var(--text-light); font-size: 12px; cursor: pointer; flex-shrink: 0; }
@@ -2244,7 +2261,7 @@
     <h1>☁️ Ombre Brain</h1>
     <span class="stats" id="stats">loading...</span>
     <div class="header-right">
-      <button type="button" class="darkroom-door" id="darkroom-door" onclick="loadDarkroomDoor()" title="暗房" hidden>
+      <button type="button" class="darkroom-door" id="darkroom-door" onclick="openDarkroom()" title="暗房" hidden>
         <i class="fa-solid fa-door-closed"></i>
         <span class="darkroom-door-meta" id="darkroom-door-meta">0</span>
       </button>
@@ -2995,6 +3012,12 @@
   </div>
 </div>
 
+<div class="darkroom-panel" id="darkroom-panel">
+  <button class="dr-close" onclick="document.getElementById('darkroom-panel').classList.remove('open')">✕</button>
+  <h3><i class="fa-solid fa-door-closed"></i> 暗房</h3>
+  <div id="darkroom-entries"></div>
+</div>
+
 <div class="detail-panel" id="detail-panel">
   <button class="close-btn" onclick="closeDetail()">✕</button>
   <div id="detail-content"></div>
@@ -3271,6 +3294,48 @@ async function loadDarkroomDoor() {
   } catch (e) {
     door.hidden = true;
     console.warn('Darkroom door load failed:', e);
+  }
+}
+
+async function openDarkroom() {
+  var panel = document.getElementById('darkroom-panel');
+  var container = document.getElementById('darkroom-entries');
+  panel.classList.add('open');
+  container.innerHTML = '<div class="loading">加载中…</div>';
+  try {
+    var res = await authFetch(BASE + '/api/darkroom/rooms?visibility=all');
+    if (!res) return;
+    var data = await res.json();
+    var rooms = data.rooms || [];
+    if (!rooms.length) {
+      container.innerHTML = '<p style="color:var(--text-dim)">暗房里还没有内容。</p>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < rooms.length; i++) {
+      var r = rooms[i];
+      var entryRes = await authFetch(BASE + '/api/darkroom/entry/' + encodeURIComponent(r.latest_entry_id));
+      if (!entryRes) continue;
+      var entry = await entryRes.json();
+      html += '<div class="darkroom-entry-card">';
+      html += '<div class="dr-meta">';
+      html += '<span>' + esc(entry.created_at || r.created_at || '').slice(0, 16).replace('T', ' ') + '</span>';
+      if (entry.mood) html += '<span class="dr-tag">' + esc(entry.mood) + '</span>';
+      if (entry.tags) (Array.isArray(entry.tags) ? entry.tags : []).forEach(function(t) { html += '<span class="dr-tag">' + esc(t) + '</span>'; });
+      if (r.locked) html += '<span class="dr-tag">🔒 ' + esc(r.unlock_at || '').slice(11, 16) + ' 解锁</span>';
+      html += '</div>';
+      if (entry.content) {
+        html += '<div class="dr-body">' + esc(entry.content) + '</div>';
+      } else if (entry.status === 'locked') {
+        html += '<div class="dr-locked"><i class="fa-solid fa-lock"></i> 尚未解锁</div>';
+      } else {
+        html += '<div class="dr-locked">无内容</div>';
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<p style="color:var(--negative)">加载失败: ' + esc(e.message) + '</p>';
   }
 }
 

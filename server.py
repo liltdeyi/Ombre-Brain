@@ -9187,6 +9187,29 @@ async def api_darkroom_status(request):
     return JSONResponse(darkroom_store.status())
 
 
+@mcp.custom_route("/api/darkroom/rooms", methods=["GET"])
+async def api_darkroom_rooms(request):
+    """List darkroom rooms."""
+    from starlette.responses import JSONResponse
+    err = _require_dashboard_auth(request)
+    if err:
+        return err
+    visibility = request.query_params.get("visibility", "active")
+    limit = int(request.query_params.get("limit", "20"))
+    return JSONResponse(darkroom_store.rooms(limit=limit, visibility=visibility))
+
+
+@mcp.custom_route("/api/darkroom/entry/{entry_id}", methods=["GET"])
+async def api_darkroom_entry(request):
+    """View a darkroom entry (only if unlocked)."""
+    from starlette.responses import JSONResponse
+    err = _require_dashboard_auth(request)
+    if err:
+        return err
+    entry_id = request.path_params.get("entry_id", "latest")
+    return JSONResponse(darkroom_store.view(entry_id))
+
+
 @mcp.custom_route("/api/search", methods=["GET"])
 async def api_search(request):
     """Search buckets by query."""
