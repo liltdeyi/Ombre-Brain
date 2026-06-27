@@ -50,15 +50,11 @@
 
   .header {
     padding: 16px 24px 0;
-    backdrop-filter: blur(40px) saturate(1.8) brightness(1.05);
-    -webkit-backdrop-filter: blur(40px) saturate(1.8) brightness(1.05);
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 253, 0.72) 0%,
-      rgba(255, 255, 253, 0.55) 100%
-    );
-    border-bottom: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 1px 20px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(255,255,255,0.3) inset;
+    backdrop-filter: blur(28px) saturate(1.4);
+    -webkit-backdrop-filter: blur(28px) saturate(1.4);
+    background: rgba(247, 247, 245, 0.55);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 1px 12px rgba(0, 0, 0, 0.03);
     position: sticky;
     top: 0;
     z-index: 50;
@@ -276,7 +272,7 @@
   .bucket-bulk-message.error { color: var(--negative); }
   .bucket-bulk-message.ok { color: var(--positive); }
 
-  .bucket-list { display: flex; flex-direction: column; gap: 8px; }
+  .bucket-list { display: flex; flex-direction: column; gap: 8px; transition: opacity 0.15s ease; }
   .bucket-row {
     display: grid;
     grid-template-columns: 32px 200px 100px 80px 60px 100px 1fr;
@@ -4642,10 +4638,12 @@ async function deleteSelectedBuckets() {
 
 function renderBuckets(buckets) {
   var list = document.getElementById('bucket-list');
+  list.style.opacity = '0.3';
   renderedBuckets = (buckets || []).slice();
   updateBucketBulkToolbar();
   if (!buckets.length) {
     list.innerHTML = '<div class="loading">没有记忆桶</div>';
+    requestAnimationFrame(function() { list.style.opacity = '1'; });
     return;
   }
   list.innerHTML = buckets.map(function(b) {
@@ -4674,6 +4672,7 @@ function renderBuckets(buckets) {
       '<span class="preview">' + esc(b.content_preview) + '</span>' +
     '</div>';
   }).join('');
+  requestAnimationFrame(function() { list.style.opacity = '1'; });
 }
 
 var timelineExpandedDays = new Set();

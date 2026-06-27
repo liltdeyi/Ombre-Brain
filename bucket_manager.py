@@ -457,21 +457,24 @@ class BucketManager:
             logger.error(f"Failed to write bucket update / 写入桶更新失败: {file_path}: {e}")
             return False
 
-        # --- Auto-move: pinned → permanent/ ---
-        # --- 自动移动：钉选 → permanent/ ---
+        # --- Auto-move: pinned → permanent/ (skip feel buckets) ---
+        # --- 自动移动：钉选 → permanent/（feel 桶保持原类型不移动） ---
         domain = post.get("domain", ["未分类"])
-        if kwargs.get("pinned") and post.get("type") != "permanent":
+        if kwargs.get("pinned") and post.get("type") not in ("permanent", "feel"):
+            post["_pre_pin_type"] = post.get("type", "dynamic")  # remember original type
             post["type"] = "permanent"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(frontmatter.dumps(post))
             self._move_bucket(file_path, self.permanent_dir, domain)
-        # --- Auto-move back: unpinned → dynamic/ ---
-        # --- 自动回移：取消钉选 → dynamic/ ---
+        # --- Auto-move back: unpinned → restore original type ---
+        # --- 自动回移：取消钉选 → 恢复原始类型 ---
         elif "pinned" in kwargs and not kwargs["pinned"] and post.get("type") == "permanent":
-            post["type"] = "dynamic"
+            restore_type = post.pop("_pre_pin_type", "dynamic")
+            post["type"] = restore_type
+            target_dir = self.feel_dir if restore_type == "feel" else self.dynamic_dir
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(frontmatter.dumps(post))
-            self._move_bucket(file_path, self.dynamic_dir, domain)
+            self._move_bucket(file_path, target_dir, domain)
 
         logger.info(f"Updated bucket / 更新记忆桶: {bucket_id}")
         return True
