@@ -391,6 +391,11 @@ class BucketManager:
             post["pinned"] = bool(kwargs["pinned"])
             if kwargs["pinned"]:
                 post["importance"] = 10  # pinned → lock importance to 10
+            else:
+                # Unpin: restore importance to default if it was locked at 10
+                # 取消钉选：如果 importance 被锁定为 10，恢复为 5
+                if int(post.get("importance", 5)) == 10:
+                    post["importance"] = 5
         if "anchor" in kwargs:
             post["anchor"] = bool(kwargs["anchor"])
         if "digested" in kwargs:
@@ -460,6 +465,13 @@ class BucketManager:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(frontmatter.dumps(post))
             self._move_bucket(file_path, self.permanent_dir, domain)
+        # --- Auto-move back: unpinned → dynamic/ ---
+        # --- 自动回移：取消钉选 → dynamic/ ---
+        elif "pinned" in kwargs and not kwargs["pinned"] and post.get("type") == "permanent":
+            post["type"] = "dynamic"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(frontmatter.dumps(post))
+            self._move_bucket(file_path, self.dynamic_dir, domain)
 
         logger.info(f"Updated bucket / 更新记忆桶: {bucket_id}")
         return True

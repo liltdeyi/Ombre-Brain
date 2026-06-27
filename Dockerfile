@@ -10,6 +10,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install system dependencies / 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (leverage Docker cache)
 # 先装依赖（利用 Docker 缓存）
 COPY requirements.txt .

@@ -9177,6 +9177,173 @@ async def api_bucket_update(request):
     })
 
 
+# =============================================================
+# GitHub Cloud Backup / GitHub 云端备份
+# =============================================================
+_github_backup_lock = asyncio.Lock() if "asyncio" in dir() else None
+_github_backup_status = {"last_push": None, "last_error": None, "in_progress": False}
+
+
+def _github_backup_config() -> dict:
+    """Read GitHub backup config from environment variables."""
+    return {
+        "repo": os.environ.get("GITHUB_BACKUP_REPO", ""),
+        "token": os.environ.get("GITHUB_BACKUP_TOKEN", ""),
+        "branch": os.environ.get("GITHUB_BACKUP_BRANCH", "main"),
+        "commit_name": os.environ.get("GITHUB_BACKUP_NAME", "cloud"),
+        "commit_email": os.environ.get("GITHUB_BACKUP_EMAIL", "cloud@ombre"),
+    }
+
+
+def _run_git(args: list[str], cwd: str, env_extra: dict = None) -> tuple[int, str, str]:
+    """Run a git command synchronously."""
+    import subprocess
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
+    result = subprocess.run(
+        ["git"] + args,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+async def _do_github_push(buckets_dir: str, cfg: dict) -> dict:
+    """Initialize git repo if needed, commit and push buckets to GitHub."""
+    import asyncio
+
+    token = cfg["token"]
+    repo = cfg["repo"]
+    branch = cfg["branch"]
+    name = cfg["commit_name"]
+    email = cfg["commit_email"]
+
+    # Build authenticated URL
+    if repo.startswith("https://github.com/"):
+        auth_url = repo.replace("https://github.com/", f"https://x-access-token:{token}@github.com/")
+    elif repo.startswith("https://"):
+        auth_url = repo.replace("https://", f"https://x-access-token:{token}@")
+    else:
+        auth_url = repo
+
+    if not auth_url.endswith(".git"):
+        auth_url += ".git"
+
+    git_dir = os.path.join(buckets_dir, ".git")
+
+    def _sync_push():
+        # Init if needed
+        if not os.path.isdir(git_dir):
+            _run_git(["init"], cwd=buckets_dir)
+            _run_git(["checkout", "-b", branch], cwd=buckets_dir)
+
+        # Configure
+        _run_git(["config", "user.name", name], cwd=buckets_dir)
+        _run_git(["config", "user.email", email], cwd=buckets_dir)
+
+        # Set remote
+        rc, _, _ = _run_git(["remote", "get-url", "origin"], cwd=buckets_dir)
+        if rc != 0:
+            _run_git(["remote", "add", "origin", auth_url], cwd=buckets_dir)
+        else:
+            _run_git(["remote", "set-url", "origin", auth_url], cwd=buckets_dir)
+
+        # Ensure .gitignore exists (skip embeddings cache, etc.)
+        gitignore_path = os.path.join(buckets_dir, ".gitignore")
+        if not os.path.exists(gitignore_path):
+            with open(gitignore_path, "w") as f:
+                f.write("*.db\n*.sqlite\n*.cache\n__pycache__/\n")
+
+        # Add + commit
+        _run_git(["add", "-A"], cwd=buckets_dir)
+        rc, stdout, _ = _run_git(["diff", "--cached", "--quiet"], cwd=buckets_dir)
+        if rc == 0:
+            return {"status": "no_changes", "message": "没有新的变更需要备份"}
+
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        _run_git(
+            ["-c", f"user.name={name}", "-c", f"user.email={email}",
+             "commit", "-m", f"backup: {ts}"],
+            cwd=buckets_dir,
+        )
+
+        # Push
+        rc, stdout, stderr = _run_git(["push", "-u", "origin", branch, "--force"], cwd=buckets_dir)
+        if rc != 0:
+            return {"status": "error", "message": f"push failed: {stderr}"}
+        return {"status": "ok", "message": f"已推送到 {cfg['repo']} ({branch})"}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_push)
+
+
+@mcp.custom_route("/api/backup/github", methods=["POST"])
+async def api_backup_github_push(request):
+    """Trigger a GitHub backup push."""
+    from starlette.responses import JSONResponse
+    err = _require_dashboard_auth(request)
+    if err:
+        return err
+
+    global _github_backup_status
+    if _github_backup_status.get("in_progress"):
+        return JSONResponse({"status": "busy", "message": "备份正在进行中"}, status_code=409)
+
+    cfg = _github_backup_config()
+
+    # Allow override from request body
+    try:
+        body = await request.json()
+        if body.get("repo"):
+            cfg["repo"] = body["repo"]
+        if body.get("token"):
+            cfg["token"] = body["token"]
+        if body.get("branch"):
+            cfg["branch"] = body["branch"]
+    except Exception:
+        pass
+
+    if not cfg["repo"] or not cfg["token"]:
+        return JSONResponse(
+            {"status": "error", "message": "未配置 GitHub 仓库或 Token。请设置环境变量 GITHUB_BACKUP_REPO 和 GITHUB_BACKUP_TOKEN"},
+            status_code=400,
+        )
+
+    _github_backup_status["in_progress"] = True
+    try:
+        result = await _do_github_push(bucket_mgr.base_dir, cfg)
+        _github_backup_status["last_push"] = now_iso()
+        _github_backup_status["last_error"] = None if result["status"] == "ok" else result["message"]
+        return JSONResponse({**result, **_github_backup_status})
+    except Exception as e:
+        _github_backup_status["last_error"] = str(e)
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+    finally:
+        _github_backup_status["in_progress"] = False
+
+
+@mcp.custom_route("/api/backup/github/status", methods=["GET"])
+async def api_backup_github_status(request):
+    """Return GitHub backup status and config (without token)."""
+    from starlette.responses import JSONResponse
+    err = _require_dashboard_auth(request)
+    if err:
+        return err
+
+    cfg = _github_backup_config()
+    return JSONResponse({
+        "configured": bool(cfg["repo"] and cfg["token"]),
+        "repo": cfg["repo"],
+        "branch": cfg["branch"],
+        **_github_backup_status,
+    })
+
+
 @mcp.custom_route("/api/darkroom/status", methods=["GET"])
 async def api_darkroom_status(request):
     """Return public darkroom door status. Never returns private notes."""
